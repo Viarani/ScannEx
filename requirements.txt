@@ -2,4 +2,9 @@ flask>=3.0
 flask-cors
 numpy
 pillow
+scikit-learn
+umap-learn
+torch
+torchvision
+transformers
 gunicorn
