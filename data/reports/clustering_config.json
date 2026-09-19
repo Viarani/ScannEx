@@ -1,0 +1,72 @@
+{
+  "graph": {
+    "type": "SNN mutual kNN",
+    "k": 15,
+    "blend_cosine_snn": 0.5
+  },
+  "resolution_sweep": {
+    "grid": [
+      0.05,
+      0.1,
+      0.15,
+      0.2,
+      0.25,
+      0.3,
+      0.35,
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7,
+      0.75,
+      0.8,
+      0.85,
+      0.9,
+      0.95,
+      1.0,
+      1.05,
+      1.1,
+      1.15,
+      1.2,
+      1.25,
+      1.3,
+      1.35,
+      1.4,
+      1.45,
+      1.5,
+      1.55,
+      1.6,
+      1.65,
+      1.7,
+      1.75,
+      1.8,
+      1.85,
+      1.9,
+      1.95,
+      2.0
+    ],
+    "stability_min": 0.9,
+    "singleton_ratio_max": 0.3
+  },
+  "resolution_main": 0.95,
+  "consensus": {
+    "n_runs": 20,
+    "co_threshold": 0.6
+  },
+  "min_community_size": 5,
+  "hierarchical_consolidation": {
+    "linkage": "average",
+    "metric": "cosine",
+    "k_range": [
+      5,
+      30
+    ],
+    "selection_criterion": "max silhouette (UMAP space)",
+    "n_fine_community": 61,
+    "k_selected": 16,
+    "silhouette_selected": 0.7746179103851318
+  },
+  "seed": 42
+}

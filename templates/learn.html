@@ -1,0 +1,23 @@
+﻿{% extends "base.html" %}
+{% block title %}Learn — E-Waste Intelligence{% endblock %}
+{% block content %}
+<div class="container" style="padding:32px 20px">
+  <h1 style="font-size:32px; font-weight:800; letter-spacing:-0.02em">E-Waste Learning Center</h1>
+  <p style="color:var(--text-dim); max-width:640px">Simple guides to help you understand, handle, and recycle electronic waste responsibly.</p>
+
+  <div style="display:grid; grid-template-columns: repeat(3,1fr); gap:16px; margin-top:24px">
+    {% for a in articles %}
+    <a href="/learn/{{ a.slug }}" style="text-decoration:none; color:inherit; border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px; display:flex; flex-direction:column">
+      <h3 style="font-weight:700; margin:0">{{ a.title }}</h3>
+      <p style="font-size:13px; color:var(--text-dim); margin-top:8px; flex:1">{{ a.excerpt }}</p>
+      <div style="margin-top:12px; font-weight:600; color:var(--teal); font-size:13px">Read more →</div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<style>
+@media (max-width:1024px){ div[style*="grid-template-columns: repeat(3"]{grid-template-columns: repeat(2,1fr) !important} }
+@media (max-width:640px){ div[style*="grid-template-columns: repeat(3"]{grid-template-columns:1fr !important} }
+</style>
+{% endblock %}

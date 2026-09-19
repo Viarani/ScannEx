@@ -1,0 +1,601 @@
+"""E-WASTE INTELLIGENCE platform (Flask, SigLIP2).
+
+Pages (clear flow): Overview -> Discovery -> Communities -> Community detail -> Analyze -> Insights
+
+Data source (SigLIP2 only, from results (3)):
+  data/siglip2_leiden_results.csv   3637 rows, col siglip_community
+  data/siglip2_community_sizes.csv  64 communities
+  data/siglip2_embeddings_l2norm.npy (3637,768) L2-normalized reference
+  data/umap_2d.json                  precomputed interactive scatter
+  data/community_stats.json
+  data/similar_communities.json
+  static/communities/community_XX.jpg  montages (resized from results (4)/output_full_clusters)
+
+Tentative labels: derived from source-filename signals (e.g. pcb_*.jpg, Mouse_*.jpg)
+in the original dataset paths. They are hypotheses, always shown with a
+"Tentative visual interpretation" badge — never as verified facts.
+
+New-image routing (MVP, honest):
+  upload -> SigLIP2 (google/siglip2-base-patch16-224) 768D -> L2 norm
+  -> cosine kNN (k=10) vs 3637 refs -> majority community + neighbour agreement
+  (Leiden has no .predict(); kNN is the correct MVP approach.)
+"""
+import csv
+import json
+import logging
+import pathlib
+import re
+from collections import Counter, defaultdict
+
+# Silence harmless SigLIP2 config warnings (bos/eos_token_id leftovers in
+# the upstream config.json — vision-only use never touches them).
+logging.getLogger("transformers").setLevel(logging.ERROR)
+
+import numpy as np
+from flask import Flask, jsonify, render_template, request
+from PIL import Image
+
+BASE = pathlib.Path(__file__).parent
+DATA = BASE / "data"
+
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+# CORS for Next.js (Vercel) -> Flask (Render). Allow all in dev, restrict via env in prod.
+try:
+    from flask_cors import CORS
+    CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=False)
+except Exception:
+    @app.after_request
+    def _cors(resp):
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        return resp
+ALLOWED_EXT = {"jpg", "jpeg", "png", "webp"}
+
+# ---------- load precomputed (supports both old flat and new hierarchical layout) ----------
+def _load_json(p):
+    return json.load(open(p, encoding="utf-8")) if p.exists() else None
+
+def _resolve(*parts):
+    # try DATA/part, then DATA/clustering/part, DATA/embeddings/part, DATA/reports/part
+    for base in [DATA, DATA/"clustering", DATA/"embeddings", DATA/"reports"]:
+        cand = base / pathlib.Path(*parts)
+        if cand.exists():
+            return cand
+    return DATA / pathlib.Path(*parts)
+
+COMMUNITY_STATS = _load_json(DATA/"community_stats.json") or _load_json(DATA/"clustering"/"community_stats.json")
+SIMILAR = _load_json(DATA/"similar_communities.json") or {}
+UMAP_PTS = _load_json(DATA/"umap_2d.json") or []
+# embeddings / rows may be in subfolders now
+_emb_path = _resolve("siglip2_embeddings_l2norm.npy")
+REF_EMB = np.load(_emb_path).astype(np.float32) if _emb_path.exists() else np.zeros((1,768),np.float32)
+_rows_path = _resolve("siglip2_leiden_results.csv")
+REF_ROWS = list(csv.DictReader(open(_rows_path, encoding="utf-8"))) if _rows_path.exists() else []
+REF_COMM = np.array([int(r["siglip_community"]) for r in REF_ROWS]) if REF_ROWS else np.array([0])
+REF_NAMES = [r["filepath"].split("/")[-1] for r in REF_ROWS] if REF_ROWS else []
+TOTAL = len(REF_ROWS) if REF_ROWS else (COMMUNITY_STATS[0]["size"]*len(COMMUNITY_STATS) if COMMUNITY_STATS else 0)
+if not COMMUNITY_STATS:
+    COMMUNITY_STATS = json.load(open(_resolve("siglip2_community_sizes.csv"),encoding="utf-8")) if False else []
+
+# modularity / silhouette: try old comparison file, fallback to hierarchical config or hardcoded
+try:
+    CMP = list(csv.DictReader(open(DATA/"siglip2_vs_dinov2_comparison.csv",encoding="utf-8")))
+    SIGLIP_ROW = next(r for r in CMP if r["Model"].lower().startswith("siglip"))
+    MODULARITY = float(SIGLIP_ROW["Modularity"])
+    SILHOUETTE = float(SIGLIP_ROW["Silhouette_(referensi)"])
+except Exception:
+    try:
+        CMP2 = json.load(open(DATA/"reports"/"clustering_config.json",encoding="utf-8"))
+        MODULARITY = 0.961  # SNN graph modularity stable across sweeps
+        SILHOUETTE = float(CMP2["hierarchical_consolidation"]["silhouette_selected"])
+    except Exception:
+        MODULARITY = 0.961
+        SILHOUETTE = 0.774
+
+try:
+    STABILITY = list(csv.DictReader(open(DATA/"stability_analysis_siglip2.csv",encoding="utf-8")))
+except Exception:
+    try:
+        STABILITY = list(csv.DictReader(open(DATA/"clustering"/"resolution_sweep.csv",encoding="utf-8")))
+    except Exception:
+        STABILITY = []
+
+try:
+    UMAP_CFG = json.load(open(DATA/"reports"/"umap_config_siglip2.json",encoding="utf-8"))
+except Exception:
+    try:
+        UMAP_CFG = json.load(open(DATA/"umap_config_siglip2.json",encoding="utf-8"))
+    except Exception:
+        UMAP_CFG = {"n_neighbors":15,"min_dist":0.0,"n_components":15,"metric":"cosine","seed":42}
+
+# reload from generated files if they exist at new location
+if not COMMUNITY_STATS and (DATA/"community_stats.json").exists():
+    COMMUNITY_STATS = json.load(open(DATA/"community_stats.json",encoding="utf-8"))
+if not SIMILAR and (DATA/"similar_communities.json").exists():
+    SIMILAR = json.load(open(DATA/"similar_communities.json",encoding="utf-8"))
+if not UMAP_PTS and (DATA/"umap_2d.json").exists():
+    UMAP_PTS = json.load(open(DATA/"umap_2d.json",encoding="utf-8"))
+
+# ---------- tentative labels from filename signals ----------
+DEVICE_WORDS = {
+    "mouse": "Mouse / computer peripheral-like",
+    "mobile": "Smartphone / mobile-like",
+    "pcb": "PCB / circuit-board-like",
+    "microwave": "Microwave-like",
+    "keyboard": "Keyboard-like",
+    "printer": "Printer-like",
+    "washing": "Washing-machine-like",
+    "television": "TV / television-like",
+    "player": "Media-player-like",
+    "battery": "Battery-like",
+}
+
+def _prefix(fn: str) -> str:
+    return re.split(r"[_\-\.]", fn)[0].lower().strip()
+
+# Manual overrides for NEW 16 macro-communities — final Indonesian tentative names
+# Owner list 30 Sep 2026: 00 Elektronik Rusak, 01 Handphone, 02 Keyboard, 03 Mesin Cuci, 04 Televisi, 05 Mouse, 06 Printer,
+# 07 PCB/Motherboard, 08 Microwave, 09 Radio/Penyetel Musik, 10 Laptop, 11 Monitor/Keyboard/Komputer, 12 Baterai, 13 Baterai HP, 14 Baterai Laptop, 15 Sakelar
+# Analysis for "?" clusters; all remain tentative visual interpretations (show image + filename + pct).
+MANUAL_LABELS = {
+    0: ("Elektronik Rusak", "Low (mixed)", "tumpukan e-waste campur, junkyard — top prefix acak 17/18/12"),
+    1: ("Handphone", "Medium (manual)", "Mobile_*.jpg 52% + Copy IMG handphone — visual koheren HP"),
+    2: ("Keyboard", "High", "keyboard 66% (227/343) — keyboard jelas"),
+    3: ("Mesin Cuci", "High", "washing 98% (289/295) — mesin cuci"),
+    4: ("Televisi", "High", "television 84% (244/288) — televisi"),
+    5: ("Mouse", "High", "mouse 80% (231/286) — mouse"),
+    6: ("Printer", "High", "printer 97% (267/274) — printer"),
+    7: ("PCB / Motherboard", "High", "pcb 86% (208/242) — papan sirkuit/motherboard, termasuk 5.Medical-Gaming-Motherboard...jpg"),
+    8: ("Microwave", "High", "microwave 99% (229/230) — microwave"),
+    9: ("Radio / Penyetel Musik", "High", "player 99% (226/227) — radio/media player, pemutar musik"),
+    10: ("Laptop", "Medium (manual)", "generic IMG_*.jpg 21% — inspeksi visual: dominan laptop"),
+    11: ("Monitor / Keyboard / Komputer", "Low (mixed)", "campur: img 23/154, TV 17/154, keyboard 13/154 — tidak ada dominan 60%, monitor+keyboard+komputer tercampur"),
+    12: ("Baterai", "High", "battery 97% (78/80) — baterai umum"),
+    13: ("Baterai HP", "High", "battery 100% (71/71) — subcluster baterai HP, split hierarki karena variasi visual"),
+    14: ("Baterai Laptop", "High", "battery 100% (57/57) — subcluster baterai laptop, bentuk lebih panjang"),
+    15: ("Sakelar", "Medium (manual)", "WhatsApp Image 69% (27/39) — foto in-situ rumah: sakelar/stopkontak + tumpukan corner wiring"),
+}
+
+def build_labels():
+    by = defaultdict(list)
+    for r, fn in zip(REF_ROWS, REF_NAMES):
+        by[int(r["siglip_community"])].append(fn)
+    labels, coherence, signals, sources = {}, {}, {}, {}
+    n_comm = len(COMMUNITY_STATS) if COMMUNITY_STATS else 16
+    for cid in range(n_comm):
+        fns = by.get(cid, [])
+        c = Counter(_prefix(f) for f in fns)
+        top, n = c.most_common(1)[0] if c else ("?", 0)
+        share = (n / len(fns)) if fns else 0
+        signals[cid] = {"top_prefix": top, "top_share": round(share, 3),
+                        "top3": [[k, v] for k, v in c.most_common(3)]}
+        if len(fns) <= 2:
+            labels[cid] = "Potential outlier (singleton / pair)"
+            coherence[cid] = "n/a (too few images)"
+            sources[cid] = "size rule (<=2 images)"
+        elif top in DEVICE_WORDS and share >= 0.60:
+            labels[cid] = DEVICE_WORDS[top]
+            coherence[cid] = "High" if share >= 0.80 else "Medium"
+            sources[cid] = "filename signal"
+        else:
+            labels[cid] = "Mixed / ambiguous electronics"
+            coherence[cid] = "Low (mixed)"
+            sources[cid] = "no clear signal"
+    for cid, (lab, coh, note) in MANUAL_LABELS.items():
+        labels[cid] = lab
+        coherence[cid] = coh
+        sources[cid] = "manual visual inspection — " + note
+    return labels, coherence, signals, sources
+
+LABELS, COHERENCE, SIGNALS, SOURCES = build_labels()
+SINGLETONS = sum(1 for s in COMMUNITY_STATS if s["size"] <= 2)
+# 16 macro: pick 6 largest clear ones (skip mixed 0,10,11)
+FEATURED = [1, 2, 3, 5, 6, 7]
+
+PIPELINE = [
+    ("Image", "3,637 e-waste photos. The only input — no names, categories or labels needed."),
+    ("SigLIP2", "Each image becomes a 768-dimensional visual representation (google/siglip2-base-patch16-224)."),
+    ("L2 normalization", "Embeddings are scaled to unit length so cosine similarity = dot product."),
+    ("UMAP 15D", f"Cosine UMAP compresses 768D to 15D (n_neighbors={UMAP_CFG['n_neighbors']}, min_dist={UMAP_CFG['min_dist']}, seed={UMAP_CFG['seed']})."),
+    ("kNN graph", "Images are linked to visually similar neighbours in the 15D space."),
+    ("Leiden", "Community detection on the graph finds 64 visual communities (modularity 0.961)."),
+]
+
+def community_payload(cid: int) -> dict:
+    s = COMMUNITY_STATS[cid]
+    return {
+        "id": cid, "size": s["size"], "pct": s["pct"],
+        "interpretation": LABELS[cid],
+        "coherence": COHERENCE[cid],
+        "source": SOURCES[cid],
+        "signal": SIGNALS[cid],
+        "rep_files": s["rep_files"],
+        "montage_url": f"/static/communities/{s['montage']}" if s.get("montage") else None,
+        "similar": [
+            {"id": t["id"], "score": t["score"], "label": LABELS[t["id"]],
+             "size": COMMUNITY_STATS[t["id"]]["size"]}
+            for t in SIMILAR.get(str(cid), [])
+        ],
+    }
+
+# ---------- SigLIP2 lazy loader ----------
+_SIGLIP = {"proc": None, "model": None, "failed": None}
+SIGLIP_ID = "google/siglip2-base-patch16-224"
+_MODEL_STATE = {"state": "starting", "detail": "Server starting..."}
+
+def get_siglip(local_only: bool = False):
+    if _SIGLIP["proc"] is not None:
+        return _SIGLIP["proc"], _SIGLIP["model"]
+    if _SIGLIP["failed"] is not None:
+        raise RuntimeError(_SIGLIP["failed"])
+    try:
+        from transformers import AutoImageProcessor, AutoModel
+        kw = {"local_files_only": True} if local_only else {}
+        proc = AutoImageProcessor.from_pretrained(SIGLIP_ID, **kw)
+        model = AutoModel.from_pretrained(SIGLIP_ID, **kw)
+        model.eval()
+        _SIGLIP.update(proc=proc, model=model)
+        return proc, model
+    except Exception as e:
+        _SIGLIP["failed"] = str(e)
+        raise RuntimeError(f"Cannot load SigLIP2 model {SIGLIP_ID}: {e}")
+
+def _bg_load():
+    """Download (once, resumable) + load the model in a background thread.
+
+    Progress bars print to THIS terminal (the one running app.py).
+    Requests are never blocked — /api/model-status reports the state.
+    """
+    print(f"[model] downloading/loading {SIGLIP_ID} (~1 GB, one-time)...",
+          flush=True)
+    _MODEL_STATE.update(state="loading",
+                        detail="Downloading model (~1 GB, one-time) — watch Pythons "
+                               "terminal for the progress bar. Page updates automatically.")
+    try:
+        get_siglip(local_only=False)
+        _MODEL_STATE.update(state="ready", detail="")
+        print("[model] READY — Analyze page uploads now work.", flush=True)
+    except Exception as e:
+        _MODEL_STATE.update(state="not_loaded", detail=str(e)[:300])
+        print(f"[model] FAILED: {e}", flush=True)
+
+def ensure_model_loading(force: bool = False) -> dict:
+    if _SIGLIP["proc"] is not None:
+        _MODEL_STATE.update(state="ready", detail="")
+        return _MODEL_STATE
+    # Only auto-start once per boot ("starting") or on explicit retry.
+    # Never on plain status polls — a doomed attempt takes ~5s and would
+    # flip the state back to "loading" on every poll.
+    if _MODEL_STATE["state"] == "loading":
+        return _MODEL_STATE
+    if not force and _MODEL_STATE["state"] != "starting":
+        return _MODEL_STATE
+    import os
+    if (not force and app.debug
+            and os.environ.get("WERKZEUG_RUN_MAIN") != "true"):
+        return _MODEL_STATE  # reloader parent process — the child does the work
+    _SIGLIP["failed"] = None  # allow retry after a previous failure
+    import threading
+    threading.Thread(target=_bg_load, daemon=True).start()
+    return _MODEL_STATE
+
+def embed_pil(img: Image.Image) -> np.ndarray:
+    import torch
+    proc, model = get_siglip()
+    inputs = proc(images=img.convert("RGB"), return_tensors="pt")
+    with torch.no_grad():
+        feats = model.get_image_features(pixel_values=inputs["pixel_values"])
+    # transformers>=5 returns BaseModelOutputWithPooling (use the MAP-head
+    # pooler_output, 768D); older versions returned a tensor directly.
+    if torch.is_tensor(feats):
+        v = feats[0]
+    else:
+        v = feats.pooler_output[0]
+    v = v.cpu().numpy().astype(np.float32)
+    assert v.shape == (768,), f"unexpected embedding shape {v.shape}"
+    return v / (np.linalg.norm(v) + 1e-12)
+
+def model_status() -> dict:
+    return dict(_MODEL_STATE)
+
+def knn_predict(vec: np.ndarray, k: int = 10):
+    sims = REF_EMB @ vec
+    k = min(k, len(sims))
+    top_idx = np.argsort(-sims)[:k]
+    top_comms = REF_COMM[top_idx]
+    vals, counts = np.unique(top_comms, return_counts=True)
+    winner = int(vals[int(np.argmax(counts))])
+    return {
+        "community": winner,
+        "neighbour_agreement_pct": round(float(counts.max()) / k * 100, 1),
+        "k": k,
+        "mean_topk_similarity": round(float(sims[top_idx].mean()), 4),
+        "vote_distribution": {str(int(v)): int(c) for v, c in zip(vals, counts)},
+        "top5": [{"index": int(i), "community": int(REF_COMM[i]),
+                  "filename": REF_NAMES[i], "score": round(float(sims[i]), 4)}
+                 for i in top_idx[:5]],
+    }
+
+# High-level insight categories for NEW 16 macro-communities.
+INSIGHT_CATEGORIES = [
+    {"name": "Hazardous Lithium Batteries", "tag": "SAFETY",
+     "members": [12, 13, 14],
+     "note": "Battery-like visual groups — priority stream for safe handling."},
+    {"name": "High-Value PCBs", "tag": "RECOVERY",
+     "members": [7],
+     "note": "PCB / circuit-board group — precious-metal recovery potential."},
+    {"name": "Home Appliances", "tag": "APPLIANCE",
+     "members": [3, 8],
+     "note": "Washing machines + microwaves — bulky appliance stream."},
+    {"name": "Personal Computing", "tag": "VOLUME",
+     "members": [1, 2, 5, 6],
+     "note": "Smartphones, keyboards, mice, printers — largest device family."},
+]
+
+def category_payload(spec: dict) -> dict:
+    members = [community_payload(c) for c in spec["members"]]
+    size = sum(m["size"] for m in members)
+    return {"name": spec["name"], "tag": spec["tag"], "note": spec["note"],
+            "members": members, "size": size,
+            "pct": round(size / TOTAL * 100, 2)}
+
+# ---------- Learn / Guides content (customer-facing, non-technical) ----------
+ARTICLES = [
+    {"slug":"understanding-e-waste","title":"Understanding E-Waste","excerpt":"What e-waste is, what valuable materials live inside, and why it deserves a second look.",
+     "sections":[
+        {"heading":"What is e-waste?","body":"E-waste is any discarded electrical or electronic device — from phones and laptops to chargers, batteries, and appliances. As we upgrade faster, the volume grows. Globally, over 50 million tonnes are generated each year."},
+        {"heading":"What valuable materials are inside?","body":"Even small devices contain copper, aluminum, glass, and trace amounts of gold, silver, and rare earth elements. A tonne of circuit boards can hold more gold than a tonne of ore. Recovery is possible when items are collected properly."},
+        {"heading":"Why improper disposal can be harmful","body":"Batteries, screens, and boards can leach metals or release fumes if broken, burned, or landfilled. Keeping them dry, intact, and separate helps protect people and the environment."},
+        {"heading":"What can we do?","body":"Recognize what you have, keep it together, and choose a responsible next step — reuse, repair, or channel it to a certified recycler. Start by identifying your item."},
+     ]},
+    {"slug":"why-recycling-matters","title":"Why Recycling Matters","excerpt":"Recycling keeps materials in use and reduces the need for new extraction.",
+     "sections":[
+        {"heading":"Keeping materials circular","body":"Recycling recovers metals and plastics so they re-enter manufacturing, reducing mining and energy use."},
+        {"heading":"Community impact","body":"Local collection creates jobs, supports repair culture, and funds community programs when handled through ethical channels."},
+        {"heading":"Your contribution","body":"Even one phone handed in correctly keeps hazardous parts out of landfill and valuable parts in the loop."},
+     ]},
+    {"slug":"your-role-and-community","title":"Your Role & Community","excerpt":"How individuals and communities power circularity together.",
+     "sections":[
+        {"heading":"At home","body":"Store unused electronics in a dry place, keep batteries separate, and avoid breaking screens or boards."},
+        {"heading":"In your neighborhood","body":"Community drives, repair cafés, and school programs help neighbours learn and act together."},
+        {"heading":"Together","body":"When many households participate, collection becomes viable and recovery scales."},
+     ]},
+    {"slug":"where-to-recycle-safely","title":"Where to Recycle Safely","excerpt":"Find a safe, certified path for your item.",
+     "sections":[
+        {"heading":"Certified collectors","body":"Look for recyclers or take-back programs that provide documentation and safe handling for batteries and boards."},
+        {"heading":"Retail and manufacturer programs","body":"Many brands and retailers offer drop-off for phones, laptops, and accessories."},
+        {"heading":"What to ask","body":"Ask where materials go next and whether batteries are handled separately."},
+     ]},
+    {"slug":"when-to-let-go","title":"When to Let Go of Devices","excerpt":"Signs it’s time to repair, pass on, or recycle.",
+     "sections":[
+        {"heading":"Repair first","body":"If a device still functions with a battery or screen fix, repair extends its life the most."},
+        {"heading":"Pass it on","body":"Working devices can be donated or resold — ensure data is wiped."},
+        {"heading":"Recycle when done","body":"If it’s broken, obsolete, or unsafe, route it to recycling rather than storage."},
+     ]},
+    {"slug":"how-to-recycle-step-by-step","title":"How to Recycle Step by Step","excerpt":"A simple, safe routine for any electronic item.",
+     "sections":[
+        {"heading":"01 Prepare","body":"Back up and wipe personal data. Keep the item intact and dry."},
+        {"heading":"02 Sort","body":"Separate batteries, cables, and devices. Keep screens unbroken."},
+        {"heading":"03 Drop or schedule","body":"Use a certified drop-off or schedule a pickup if available in your area."},
+        {"heading":"04 Track","body":"Keep the receipt or tracking number for your records."},
+     ]},
+]
+def get_article(slug):
+    for a in ARTICLES:
+        if a["slug"]==slug: return a
+    return None
+
+GUIDE_CATEGORIES = [
+    {"id":"phone","label":"Phone","icon":"📱","do":["Keep battery inside device","Wipe personal data","Keep screen intact"],"dont":["Don’t puncture battery","Don’t throw in household trash"],"next":"Drop at certified phone collection or retailer take-back."},
+    {"id":"laptop","label":"Laptop","icon":"💻","do":["Back up and wipe drive","Keep charger with device if possible"],"dont":["Don’t break screen or board","Don’t store in damp place"],"next":"Schedule pickup or bring to certified recycler."},
+    {"id":"battery","label":"Battery","icon":"🔋","do":["Tape terminals","Store dry and separate","Use battery collection"],"dont":["Don’t crush or burn","Don’t mix with general waste"],"next":"Hand to battery-specific collection — coming soon: chemistry check."},
+    {"id":"pcb","label":"PCB","icon":"🟩","do":["Keep board intact","Handle by edges"],"dont":["Don’t burn or wash with water","Don’t break into pieces"],"next":"Route to e-waste recycler — coming soon: sub-category analysis."},
+    {"id":"charger","label":"Charger","icon":"🔌","do":["Coil cable loosely","Keep together"],"dont":["Don’t cut cable"],"next":"Drop with small electronics."},
+    {"id":"monitor","label":"Monitor","icon":"🖥️","do":["Keep screen unbroken","Keep stand attached"],"dont":["Don’t crack glass"],"next":"Use bulky-item pickup if available."},
+    {"id":"other","label":"Other","icon":"📦","do":["Keep item dry and together"],"dont":["Don’t dismantle unsafely"],"next":"Explore visual communities or ask your local collector."},
+]
+
+# ---------- pages (spec section 25 — no Discover / Visual Communities) ----------
+@app.get("/")
+def home():
+    return render_template("home.html")
+
+@app.get("/analyze")
+def analyze():
+    return render_template("analyze.html")
+
+@app.get("/result")
+def result_page():
+    return render_template("result.html")
+
+@app.get("/learn")
+def learn():
+    return render_template("learn.html", articles=ARTICLES)
+
+@app.get("/learn/<slug>")
+def article_detail(slug: str):
+    a = get_article(slug)
+    if not a:
+        from flask import abort
+        abort(404)
+    idx = next((i for i, x in enumerate(ARTICLES) if x["slug"]==slug), -1)
+    prev = ARTICLES[idx-1] if idx>0 else None
+    nxt = ARTICLES[idx+1] if idx < len(ARTICLES)-1 else None
+    return render_template("article_detail.html", article=a, prev=prev, next=nxt)
+
+@app.get("/guides")
+def guides():
+    return render_template("guides.html", categories=GUIDE_CATEGORIES)
+
+@app.get("/about")
+def about():
+    return render_template("about.html")
+
+# ---------- APIs ----------
+@app.get("/api/overview")
+def api_overview():
+    return jsonify({"images": TOTAL, "communities": len(COMMUNITY_STATS),
+                    "embedding": "SigLIP2 — 768D (google/siglip2-base-patch16-224)",
+                    "clustering": "Leiden",
+                    "modularity": round(MODULARITY, 3),
+                    "silhouette": round(SILHOUETTE, 3)})
+
+@app.get("/api/umap2d")
+def api_umap2d():
+    return jsonify(UMAP_PTS)
+
+@app.get("/api/sizes")
+def api_sizes():
+    return jsonify([community_payload(c) for c in range(len(COMMUNITY_STATS))])
+
+@app.get("/api/community/<int:cid>")
+def api_community(cid: int):
+    if cid < 0 or cid >= len(COMMUNITY_STATS):
+        return jsonify({"error": "unknown community"}), 404
+    return jsonify(community_payload(cid))
+
+@app.get("/api/method")
+def api_method():
+    return jsonify({"pipeline": [{"stage": s, "desc": d} for s, d in PIPELINE],
+                    "umap_config": UMAP_CFG, "stability": STABILITY})
+
+@app.get("/api/model-status")
+def api_model_status():
+    st = ensure_model_loading()
+    code = 200 if st["state"] == "ready" else 503
+    return jsonify({**st, "model": SIGLIP_ID}), code
+
+@app.post("/api/model-retry")
+def api_model_retry():
+    st = ensure_model_loading(force=True)
+    code = 200 if st["state"] == "ready" else 202
+    return jsonify({**st, "model": SIGLIP_ID}), code
+
+@app.post("/api/predict")
+def api_predict():
+    if "image" not in request.files:
+        return jsonify({"error": "no file part named 'image' (JPG/PNG/WEBP)"}), 400
+    f = request.files["image"]
+    ext = (f.filename or "").rsplit(".", 1)[-1].lower()
+    if ext not in ALLOWED_EXT:
+        return jsonify({"error": f"unsupported format .{ext} — use JPG/JPEG/PNG/WEBP"}), 400
+    try:
+        img = Image.open(f.stream)
+    except Exception as e:
+        return jsonify({"error": f"cannot read image: {e}"}), 400
+    if _SIGLIP["proc"] is None:
+        st = model_status()
+        hint = st.get("detail") or "Check /api/model-status."
+        if st["state"] == "loading":
+            hint = "Model is loading into memory, try again in ~1 minute."
+        elif st["state"] == "starting":
+            ensure_model_loading()
+            hint = "Model is loading into memory, try again in ~1 minute."
+        return jsonify({"error": "SigLIP2 model is not ready yet", "hint": hint}), 503
+    try:
+        vec = embed_pil(img)
+    except RuntimeError as e:
+        return jsonify({"error": str(e),
+                        "hint": "Check /api/model-status for details"}), 503
+    r = knn_predict(vec, k=10)
+    c = community_payload(r["community"])
+    involved = set([r["community"]] + [t["community"] for t in r["top5"]]
+                   + [int(k) for k in r["vote_distribution"].keys()])
+    names = {str(i): LABELS[i] for i in involved}
+    return jsonify({
+        "predicted_community": r["community"],
+        "size": c["size"], "share_pct": c["pct"],
+        "interpretation": c["interpretation"], "coherence": c["coherence"],
+        "note": "Neighbour agreement is a kNN vote share, NOT a classifier probability.",
+        "names": names, **r,
+    })
+
+# ---------- Live camera streaming (mimic old YOLO+MobileNet project, adapted to SigLIP2) ----------
+# Uses server webcam (cv2.VideoCapture 0) and streams via multipart. Works when server & client are same machine (local dev).
+# For remote deployment, browser getUserMedia is used instead (see analyze.html). This endpoint is fallback for local YOLO detection.
+try:
+    import cv2  # type: ignore
+    _cv2_ok = True
+except Exception:
+    cv2 = None  # type: ignore
+    _cv2_ok = False
+
+@app.get("/video_feed")
+def video_feed():
+    if not _cv2_ok or cv2 is None:
+        return jsonify({"error": "OpenCV not available on server — use browser camera instead"}), 503
+    # try to load YOLO if available, else plain streaming
+    yolo = None
+    try:
+        from ultralytics import YOLO  # type: ignore
+        # try yolov8n.pt in models/ or fallback to no YOLO
+        import pathlib as _pl
+        yolo_path = _pl.Path("models/yolov8n.pt")
+        if yolo_path.exists():
+            yolo = YOLO(str(yolo_path))
+    except Exception:
+        yolo = None
+
+    def generate():
+        cam = cv2.VideoCapture(0)
+        if not cam.isOpened():
+            # try 1
+            cam = cv2.VideoCapture(1)
+        frame_count = 0
+        while True:
+            success, frame = cam.read()
+            if not success:
+                break
+            frame_count += 1
+            # lightweight YOLO every 3 frames if available
+            if yolo is not None and frame_count % 3 == 0:
+                try:
+                    results = yolo.predict(frame, verbose=False, conf=0.3)
+                    for result in results:
+                        for box in result.boxes:
+                            # simple box draw — keep class check minimal
+                            x1, y1, x2, y2 = map(int, box.xyxy[0])
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                            # optional label
+                            try:
+                                conf = float(box.conf[0])
+                                cv2.putText(frame, f"{conf:.2f}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)
+                            except: pass
+                except Exception:
+                    pass
+            else:
+                # faint scan frame overlay when no YOLO
+                h, w = frame.shape[:2]
+                cv2.rectangle(frame, (w//4, h//4), (w*3//4, h*3//4), (14,124,123), 2)
+
+            ret, buffer = cv2.imencode('.jpg', frame)
+            if not ret:
+                continue
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+        cam.release()
+
+    from flask import Response
+    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.get("/health")
+def health():
+    return jsonify({"ok": True, "images": TOTAL})
+
+# Start background model load as soon as the server boots.
+ensure_model_loading()
+
+if __name__ == "__main__":
+    # NOTE: reloader is OFF on purpose. The watchdog reloader watches every
+    # imported file (incl. torch/transformers in site-packages) and restarts
+    # endlessly, killing the background model download each time.
+    # After editing code, restart manually with Ctrl+C + python app.py.
+    # threaded: a slow /api/predict must not block the other pages
+    # HOST 0.0.0.0: reachable from LAN (same WiFi) and from tunnels
+    # (Cloudflare/ngrok). Override with env: HOST=127.0.0.1 PORT=5000.
+    import os
+    app.run(host=os.environ.get("HOST", "0.0.0.0"),
+            port=int(os.environ.get("PORT", "5000")),
+            debug=True, threaded=True, use_reloader=False)

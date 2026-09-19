@@ -1,0 +1,110 @@
+﻿{% extends "base.html" %}
+{% block title %}Result — E-Waste Intelligence{% endblock %}
+{% block content %}
+<div class="container" style="padding:32px 20px; max-width:1100px">
+  <div id="noResult" style="display:none; text-align:center; padding:60px 20px">
+    <h1 style="font-size:28px; font-weight:800">No analysis yet</h1>
+    <p style="color:var(--text-dim)">Analyze an item with your camera or upload a photo to see results here.</p>
+    <a href="/analyze" class="btn btn-teal" style="display:inline-block; margin-top:16px">Analyze an Item</a>
+  </div>
+
+  <div id="hasResult" style="display:none">
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:28px; align-items:start">
+      <div style="border:1px solid var(--line); border-radius:24px; background:var(--panel); padding:12px">
+        <div style="aspect-ratio:4/3; border-radius:16px; overflow:hidden; background:var(--panel); display:grid; place-items:center">
+          <img id="resultImg" style="width:100%; height:100%; object-fit:contain; display:none">
+          <span id="resultPlaceholder" style="color:var(--text-dim); font-size:13px">Your image</span>
+        </div>
+        <div style="font-size:11px; color:var(--text-dim); text-align:center; margin-top:8px">Analyzed image · Visual identification only</div>
+      </div>
+
+      <div>
+        <div style="font-size:11px; letter-spacing:0.18em; font-weight:700; color:var(--teal)">WE FOUND SOMETHING</div>
+        <h1 id="resultTitle" style="font-size:28px; font-weight:800; margin-top:6px; letter-spacing:-0.02em"></h1>
+        <div id="resultSub" style="color:var(--text-dim); margin-top:4px"></div>
+
+        <div style="margin-top:16px; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px">
+          <div style="font-size:11px; font-weight:700; letter-spacing:0.12em; color:var(--text-dim)">VISUAL MATCH</div>
+          <div id="resultInterpretation" style="font-weight:600; margin-top:4px"></div>
+          <div id="resultMeta" style="font-size:13px; color:var(--text-dim)"></div>
+          <div id="resultAgreement" style="font-size:13px; margin-top:6px"></div>
+          <div id="resultAmbiguous" style="font-size:12px; color:var(--text-dim); margin-top:6px; display:none">We avoid forcing a specific name when the visual group is mixed. This is a visually similar collection, not a definitive label.</div>
+        </div>
+
+        <div style="margin-top:16px; border:1px solid var(--line); border-radius:16px; background:var(--panel); padding:16px">
+          <h3 style="font-weight:700; margin:0">About this item</h3>
+          <p id="aboutText" style="font-size:13px; color:var(--text-dim); line-height:1.6; margin-top:6px"></p>
+        </div>
+
+        <div style="margin-top:16px; border:1px solid var(--line); border-radius:16px; background:var(--panel); padding:16px">
+          <h3 style="font-weight:700; margin:0">What you can do next</h3>
+          <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px; font-size:13px">
+            <a href="/learn" style="font-weight:600">Learn more about this type of e-waste →</a>
+            <a href="/communities" style="font-weight:600">Explore similar visual groups →</a>
+            <a href="/guides" style="font-weight:600">View handling guide →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:32px">
+      <h2 style="font-size:18px; font-weight:800">Explore similar items</h2>
+      <p style="font-size:13px; color:var(--text-dim)">Visually matched from our reference collection — not a purchase list.</p>
+      <div id="similarGrid" style="display:grid; grid-template-columns: repeat(5,1fr); gap:12px; margin-top:12px"></div>
+      <p style="font-size:11px; color:var(--text-dim); margin-top:8px">We show filename placeholders here; replace with real thumbnails when available.</p>
+    </div>
+
+    <div style="margin-top:24px; display:flex; gap:12px; flex-wrap:wrap">
+      <a href="/analyze" class="btn btn-teal">Analyze another item</a>
+      <a href="/guides" class="btn btn-outline">See handling guide</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+try{
+  const raw=sessionStorage.getItem('ewaste_last_result');
+  const preview=sessionStorage.getItem('ewaste_preview');
+  if(!raw){
+    document.getElementById('noResult').style.display='block';
+  } else {
+    const j=JSON.parse(raw);
+    document.getElementById('hasResult').style.display='block';
+    if(preview){
+      const img=document.getElementById('resultImg');
+      img.src=preview; img.style.display='block';
+      document.getElementById('resultPlaceholder').style.display='none';
+    }
+    const isAmbiguous = (j.interpretation||'').toLowerCase().includes('mixed') || (j.interpretation||'').toLowerCase().includes('ambiguous') || (j.neighbour_agreement_pct||100) < 55;
+    const heading = isAmbiguous ? 'We found a visually similar group' : (j.interpretation || 'Electronic device');
+    const sub = isAmbiguous ? 'Similar electronic item' : 'Electronic device';
+    document.getElementById('resultTitle').textContent = heading;
+    document.getElementById('resultSub').textContent = sub + ' · ' + (isAmbiguous ? 'This represents a visual identification — it groups items that look alike.' : '');
+    document.getElementById('resultInterpretation').textContent = j.interpretation || '';
+    document.getElementById('resultMeta').textContent = (j.size||'') + ' visual items · ' + (j.share_pct||'') + '% of dataset · ' + (j.coherence||'');
+    document.getElementById('resultAgreement').innerHTML = j.neighbour_agreement_pct!=null ? '<b>Neighbour agreement: '+j.neighbour_agreement_pct+'%</b> <span style="color:var(--text-dim)">· Visual match</span>' : 'Visual match';
+    if(isAmbiguous) document.getElementById('resultAmbiguous').style.display='block';
+    const aboutMap = {
+      'Battery': 'Batteries contain materials that need careful handling. Keep them dry and separate from other waste.',
+      'PCB': 'Circuit boards often contain recoverable metals. Handling should avoid breaking or burning.',
+      'Washing': 'Large appliances are bulky and often collected via dedicated pickup services.',
+      'Microwave': 'Large appliances are bulky and often collected via dedicated pickup services.'
+    };
+    let about='Electronic items vary in materials and handling needs. Exploring similar items can help you decide the next step.';
+    for(const k in aboutMap){ if((j.interpretation||'').includes(k)) about=aboutMap[k]; }
+    document.getElementById('aboutText').textContent=about;
+    const grid=document.getElementById('similarGrid');
+    (j.top5||[]).forEach(t=>{
+      const name = (j.names && j.names[String(t.community)]) || 'Visual group';
+      const div=document.createElement('div');
+      div.style.cssText='border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel)';
+      div.innerHTML='<div style="aspect-ratio:1; background:var(--panel); display:grid; place-items:center; padding:8px; text-align:center; font-size:11px; color:var(--text-dim)">'+t.filename+'</div><div style="padding:10px"><div style="font-size:12px; font-weight:600">'+name+'</div><div style="font-size:11px; color:var(--text-dim)">Strong visual match</div></div>';
+      grid.appendChild(div);
+    });
+  }
+}catch(e){
+  document.getElementById('noResult').style.display='block';
+}
+</script>
+{% endblock %}

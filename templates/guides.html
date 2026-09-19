@@ -1,0 +1,47 @@
+﻿{% extends "base.html" %}
+{% block title %}Guides — E-Waste Intelligence{% endblock %}
+{% block content %}
+<div class="container" style="padding:32px 20px">
+  <h1 style="font-size:32px; font-weight:800; letter-spacing:-0.02em">What should I do with my electronic item?</h1>
+  <p style="color:var(--text-dim)">Choose a category — guidance is general and expandable. For hazardous items, follow local certified advice.</p>
+
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:16px" id="guideTabs">
+    {% for c in categories %}
+    <button class="guide-tab {% if loop.first %}active{% endif %}" data-id="{{ c.id }}" onclick="setGuide('{{ c.id }}')">{{ c.icon }} {{ c.label }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="guide-grid" style="margin-top:20px">
+    <div class="guide-card do">
+      <h3 style="margin:0; font-weight:700; color:var(--teal-glow)">DO ✓</h3>
+      <ul id="doList" style="margin-top:8px; font-size:13px; line-height:1.7; color:var(--text-dim)"></ul>
+    </div>
+    <div class="guide-card dont">
+      <h3 style="margin:0; font-weight:700; color:#991b1b">DON’T ✕</h3>
+      <ul id="dontList" style="margin-top:8px; font-size:13px; line-height:1.7; color:var(--text-dim)"></ul>
+    </div>
+    <div class="guide-card next">
+      <h3 style="margin:0; font-weight:700">NEXT STEP →</h3>
+      <p id="nextText" style="font-size:13px; color:var(--text-dim); line-height:1.6; margin-top:8px"></p>
+      <a href="/learn" style="font-weight:600; font-size:13px; color:var(--teal); margin-top:8px; display:inline-block">Learn more →</a>
+    </div>
+  </div>
+
+  <p style="font-size:11px; color:var(--text-dim); margin-top:16px">Guidance is general. For batteries and damaged screens, consult certified local services. Future specialized classifiers (battery chemistry, PCB sub-type) will enhance this page — currently marked “Coming soon” where applicable.</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const cats = {{ categories|tojson }};
+let active = cats[0].id;
+function render(){
+  const c=cats.find(x=>x.id===active);
+  document.querySelectorAll('.guide-tab').forEach(b=> b.classList.toggle('active', b.dataset.id===active));
+  document.getElementById('doList').innerHTML = c.do.map(d=> '<li>✓ '+d+'</li>').join('');
+  document.getElementById('dontList').innerHTML = c.dont.map(d=> '<li>✕ '+d+'</li>').join('');
+  document.getElementById('nextText').textContent=c.next;
+}
+function setGuide(id){ active=id; render(); }
+render();
+</script>
+{% endblock %}

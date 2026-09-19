@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}E-Waste Intelligence{% endblock %}</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+<header class="navbar">
+  <div class="navbar-inner">
+    <a class="brand" href="/">
+      <span class="brand-mark">♻</span>
+      ScannEx
+    </a>
+    <nav class="nav-links" id="navLinks">
+      <a href="/analyze" class="{% if request.path.startswith('/analyze') or request.path.startswith('/result') %}active{% endif %}">Analyze</a>
+      <a href="/learn" class="{% if request.path.startswith('/learn') %}active{% endif %}">Learn</a>
+      <a href="/guides" class="{% if request.path.startswith('/guides') %}active{% endif %}">Guides</a>
+      <a href="/about" class="{% if request.path.startswith('/about') %}active{% endif %}">About</a>
+    </nav>
+    <a class="nav-cta" href="/analyze">Analyze an Item</a>
+    <button class="hamburger" id="hamburger" aria-label="menu"><span></span><span></span><span></span></button>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="/analyze" class="{% if request.path.startswith('/analyze') %}active{% endif %}">Analyze</a>
+    <a href="/learn" class="{% if request.path.startswith('/learn') %}active{% endif %}">Learn</a>
+    <a href="/guides" class="{% if request.path.startswith('/guides') %}active{% endif %}">Guides</a>
+    <a href="/about" class="{% if request.path.startswith('/about') %}active{% endif %}">About</a>
+    <a href="/analyze" class="nav-cta" style="display:inline-block; margin-top:8px; text-align:center">Analyze an Item</a>
+  </div>
+</header>
+
+<main>
+{% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  <div class="container" style="display:flex; justify-content:space-between; gap:20px; flex-wrap:wrap">
+    <div>
+      <div class="brand-text" style="display:flex; gap:8px; align-items:center"><span class="brand-mark" style="width:28px; height:28px; font-size:12px">♻</span>ScannEx</div>
+      <div style="margin-top:8px; max-width:420px; color:var(--text-dim)">Making e-waste easier to understand through visual AI, education, and responsible handling pathways.</div>
+    </div>
+    <div style="font-size:12px; line-height:1.8">
+      <div>© 2026 ScannEx</div>
+      <div>16 visual communities · 3,637 images · Visual AI for circularity</div>
+      <div><a href="/about">About</a> · <a href="/learn">Learn</a> · <a href="/guides">Guides</a></div>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.getElementById('hamburger')?.addEventListener('click', ()=>{
+  const m=document.getElementById('mobileMenu');
+  m.style.display=m.style.display==='block'?'none':'block';
+});
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,225 @@
+﻿{% extends "base.html" %}
+{% block title %}Analyze — ScannEx{% endblock %}
+{% block content %}
+<div id="choiceView" class="container" style="padding:40px 20px; max-width:860px">
+  <div style="text-align:center; max-width:560px; margin:0 auto">
+    <h1 style="font-size:32px; font-weight:800; letter-spacing:-0.02em">Identify your electronic item</h1>
+    <p style="color:#64748b; margin-top:8px">Choose how you want to show your item — camera for live, or upload a photo.</p>
+  </div>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:32px">
+    <button onclick="chooseCamera()" style="border:1px solid #e2e8f0; border-radius:24px; background:#fff; padding:28px; text-align:center; cursor:pointer">
+      <div style="width:56px; height:56px; border-radius:16px; background:#ecfdf5; display:grid; place-items:center; margin:0 auto; font-size:28px">📷</div>
+      <div style="font-weight:700; margin-top:12px">Use Camera</div>
+      <div style="font-size:12px; color:#64748b; margin-top:4px">Live preview, full-screen scan</div>
+      <div style="margin-top:12px; display:inline-block; background:#0e7c7b; color:#fff; padding:8px 16px; border-radius:999px; font-weight:600; font-size:13px">Use Camera</div>
+    </button>
+    <button onclick="chooseUpload()" style="border:1px solid #e2e8f0; border-radius:24px; background:#fff; padding:28px; text-align:center; cursor:pointer">
+      <div style="width:56px; height:56px; border-radius:16px; background:#f1f5f9; display:grid; place-items:center; margin:0 auto; font-size:28px">🖼️</div>
+      <div style="font-weight:700; margin-top:12px">Upload Image</div>
+      <div style="font-size:12px; color:#64748b; margin-top:4px">JPG, PNG, WEBP — drag & drop</div>
+      <div style="margin-top:12px; display:inline-block; border:1px solid #e2e8f0; padding:8px 16px; border-radius:999px; font-weight:600; font-size:13px">Choose Image</div>
+    </button>
+  </div>
+  <p style="text-align:center; font-size:11px; color:#94a3b8; margin-top:16px">Works with your camera · No technical knowledge needed</p>
+</div>
+
+<!-- FULL-SCREEN CAMERA -->
+<div id="cameraFullscreen" style="display:none; position:fixed; inset:0; z-index:100; background:#000; flex-direction:column">
+  <div style="flex:1; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; background:#000">
+    <video id="video" playsinline muted autoplay style="width:100%; height:100%; object-fit:cover; display:none"></video>
+    <img id="serverStream" src="" style="width:100%; height:100%; object-fit:cover; display:none" alt="server camera">
+    <div id="cameraPlaceholder" style="color:#94a3b8; text-align:center">
+      <div style="font-size:14px">Starting camera…</div>
+      <div style="font-size:11px; margin-top:4px">Allow permission when prompted</div>
+    </div>
+    <div id="scanOverlay" style="position:absolute; inset:0; pointer-events:none; display:none">
+      <div style="position:absolute; inset:12%; border:2px solid rgba(255,255,255,0.9); border-radius:24px"></div>
+      <div style="position:absolute; inset:12%; border:1px solid rgba(14,124,123,0.6); border-radius:24px"></div>
+      <div style="position:absolute; top:16px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.6); color:#fff; padding:6px 14px; border-radius:999px; font-size:11px; letter-spacing:0.12em; font-weight:700">LIVE CAMERA</div>
+    </div>
+    <canvas id="canvas" style="display:none"></canvas>
+    <button onclick="closeCamera()" style="position:absolute; top:16px; right:16px; background:rgba(0,0,0,0.6); color:#fff; border:0; width:36px; height:36px; border-radius:999px; font-size:18px">✕</button>
+  </div>
+  <div style="background:#000; padding:16px; display:flex; gap:12px; justify-content:center; align-items:center; flex-wrap:wrap; border-top:1px solid #1e293b">
+    <button id="btnScan" class="btn" style="background:#0e7c7b; color:#fff; padding:12px 28px; border-radius:999px; font-weight:700; border:0" onclick="capture()">Scan Item</button>
+    <button class="btn" style="background:#fff; color:#000; padding:12px 20px; border-radius:999px; font-weight:600; border:0" onclick="closeCamera()">Close</button>
+    <span id="statusCamera" style="color:#94a3b8; font-size:12px; margin-left:8px"></span>
+  </div>
+  <div id="cameraPreview" style="display:none; position:absolute; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.96); border-radius:16px; padding:8px">
+    <img id="previewImg" style="max-width:120px; max-height:120px; border-radius:10px; display:block">
+  </div>
+</div>
+
+<!-- UPLOAD PANE -->
+<div id="paneUpload" style="display:none; max-width:760px; margin:0 auto; padding:20px">
+  <div style="text-align:center; margin-top:16px">
+    <button onclick="backToChoice()" style="font-size:13px; color:#64748b; background:none; border:0; cursor:pointer">← Back to choices</button>
+  </div>
+  <div id="dropzone" class="dropzone" style="margin-top:16px">
+    <div style="width:44px; height:44px; border-radius:14px; background:#fff; border:1px solid #e2e8f0; display:grid; place-items:center; margin:0 auto">🖼️</div>
+    <div style="font-weight:600; margin-top:10px">Drop an electronic item image here</div>
+    <div style="font-size:13px; color:#64748b">or</div>
+    <label style="margin-top:10px; display:inline-block; background:var(--teal); color:#fff; padding:10px 18px; border-radius:999px; font-weight:600; cursor:pointer">
+      Choose Image
+      <input id="fileInput" type="file" accept=".jpg,.jpeg,.png,.webp" style="display:none">
+    </label>
+    <div style="font-size:11px; color:#94a3b8; margin-top:8px">JPG, JPEG, PNG, WEBP — max 16MB</div>
+  </div>
+  <div id="uploadPreview" style="display:none; text-align:center; margin-top:16px">
+    <img id="uploadPreviewImg" style="max-width:320px; border-radius:16px; border:1px solid #e2e8f0; margin:0 auto; display:block">
+    <div style="font-size:13px; color:#64748b; margin-top:8px" id="uploadStatus">Ready to analyze</div>
+  </div>
+  <div id="statusUpload" style="text-align:center; margin-top:12px; font-size:13px; color:#64748b"></div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+let streamOn=false;
+let busy=false;
+let useServerStream=false;
+
+function chooseCamera(){
+  document.getElementById('choiceView').style.display='none';
+  document.getElementById('paneUpload').style.display='none';
+  document.getElementById('cameraFullscreen').style.display='flex';
+  // langsung nyala — tap sudah = gesture
+  startCamera();
+}
+function chooseUpload(){
+  document.getElementById('choiceView').style.display='none';
+  document.getElementById('cameraFullscreen').style.display='none';
+  document.getElementById('paneUpload').style.display='block';
+  stopCamera();
+}
+function backToChoice(){
+  document.getElementById('choiceView').style.display='block';
+  document.getElementById('paneUpload').style.display='none';
+  document.getElementById('cameraFullscreen').style.display='none';
+  stopCamera();
+}
+function closeCamera(){
+  stopCamera();
+  backToChoice();
+}
+
+async function startCamera(){
+  // try browser camera first; fallback to server /video_feed if on localhost and browser fails
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+    const v=document.getElementById('video');
+    v.srcObject=s; await v.play();
+    v.style.display='block';
+    document.getElementById('serverStream').style.display='none';
+    document.getElementById('cameraPlaceholder').style.display='none';
+    document.getElementById('scanOverlay').style.display='block';
+    streamOn=true; useServerStream=false;
+    document.getElementById('statusCamera').textContent='';
+  }catch(e){
+    // fallback: try server stream (old YOLO project style)
+    const img=document.getElementById('serverStream');
+    // test if /video_feed exists
+    try{
+      const test=await fetch('/video_feed', {method:'HEAD'});
+      if(test.ok){
+        img.src='/video_feed';
+        img.style.display='block';
+        document.getElementById('video').style.display='none';
+        document.getElementById('cameraPlaceholder').style.display='none';
+        document.getElementById('scanOverlay').style.display='block';
+        useServerStream=true; streamOn=true;
+        document.getElementById('statusCamera').textContent='Using server camera (YOLO) — for local dev';
+        return;
+      }
+    }catch{}
+    document.getElementById('statusCamera').textContent='Camera access denied or unavailable. Please try upload instead. ('+(e.message||'')+')';
+  }
+}
+function stopCamera(){
+  const v=document.getElementById('video');
+  if(v.srcObject){ v.srcObject.getTracks().forEach(t=>t.stop()); v.srcObject=null; }
+  v.style.display='none';
+  const img=document.getElementById('serverStream');
+  img.src=''; img.style.display='none';
+  document.getElementById('cameraPlaceholder').style.display='block';
+  document.getElementById('scanOverlay').style.display='none';
+  streamOn=false; useServerStream=false;
+}
+
+async function sendBlob(blob, previewUrl){
+  if(busy) return;
+  busy=true;
+  const statusEl = document.getElementById('statusCamera').style.display!=='none' ? document.getElementById('statusCamera') : document.getElementById('statusUpload');
+  if(previewUrl){
+    const p=document.getElementById('previewImg');
+    // for fullscreen preview, show small thumb
+    if(p){ p.src=previewUrl; document.getElementById('cameraPreview').style.display='block'; }
+    const up=document.getElementById('uploadPreviewImg');
+    if(up){ up.src=previewUrl; document.getElementById('uploadPreview').style.display='block'; }
+  }
+  if(statusEl) statusEl.textContent='Analyzing your item...';
+  const fd=new FormData(); fd.append('image', blob, 'capture.jpg');
+  try{
+    const r=await fetch('/api/predict', {method:'POST', body:fd});
+    const text=await r.text();
+    let j; try{ j=JSON.parse(text);}catch{ throw new Error(text.slice(0,300)); }
+    if(!r.ok) throw new Error(j.error || j.hint || 'Analysis failed');
+    sessionStorage.setItem('ewaste_last_result', JSON.stringify({...j, timestamp: Date.now()}));
+    if(previewUrl){
+      try{ sessionStorage.setItem('ewaste_preview', previewUrl); }catch{}
+    } else {
+      const reader=new FileReader();
+      reader.onload=()=>{ try{ sessionStorage.setItem('ewaste_preview', reader.result); }catch{}; window.location.href='/result'; };
+      reader.readAsDataURL(blob);
+      return;
+    }
+    window.location.href='/result';
+  }catch(e){
+    if(statusEl) statusEl.textContent='Analysis failed: '+String(e.message||e)+' — please try again with a clearer photo.';
+    busy=false;
+  }
+}
+function capture(){
+  if(useServerStream){
+    // for server stream, we can't capture via canvas easily — grab frame via fetch snapshot? fallback: just inform
+    document.getElementById('statusCamera').textContent='Capturing from server stream…';
+    // try to capture via canvas from img
+    const img=document.getElementById('serverStream');
+    const c=document.getElementById('canvas');
+    // create temp canvas
+    const tmp=document.createElement('canvas');
+    tmp.width=640; tmp.height=480;
+    // can't draw img from mjpeg easily due to CORS, so just take a snapshot via /api/predict with dummy? Instead, ask user to use upload
+    document.getElementById('statusCamera').textContent='Server stream capture not supported — please use Upload or browser camera';
+    return;
+  }
+  const v=document.getElementById('video'), c=document.getElementById('canvas');
+  if(!v.videoWidth) return;
+  c.width=v.videoWidth; c.height=v.videoHeight;
+  c.getContext('2d').drawImage(v,0,0);
+  const dataUrl=c.toDataURL('image/jpeg',0.9);
+  c.toBlob(b=> b && sendBlob(b, dataUrl), 'image/jpeg', 0.9);
+}
+document.getElementById('fileInput')?.addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const url=URL.createObjectURL(f);
+  document.getElementById('uploadPreviewImg').src=url;
+  document.getElementById('uploadPreview').style.display='block';
+  sendBlob(f, url);
+});
+const dz=document.getElementById('dropzone');
+if(dz){
+  dz.addEventListener('dragover', e=>{ e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', ()=> dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e=>{
+    e.preventDefault(); dz.classList.remove('dragover');
+    const f=e.dataTransfer.files[0]; if(!f) return;
+    const url=URL.createObjectURL(f);
+    document.getElementById('uploadPreviewImg').src=url;
+    document.getElementById('uploadPreview').style.display='block';
+    sendBlob(f, url);
+  });
+}
+</script>
+{% endblock %}

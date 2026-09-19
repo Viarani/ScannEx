@@ -1,0 +1,37 @@
+﻿{% extends "base.html" %}
+{% block title %}About — E-Waste Intelligence{% endblock %}
+{% block content %}
+<div class="container" style="padding:32px 20px; max-width:860px">
+  <h1 style="font-size:32px; font-weight:800; letter-spacing:-0.02em">Making e-waste easier to understand</h1>
+  <p style="color:var(--text-dim); line-height:1.7; margin-top:8px">Our platform combines visual AI and e-waste knowledge to help people better understand electronic items and explore more responsible handling pathways.</p>
+
+  <div style="display:grid; grid-template-columns: repeat(2,1fr); gap:16px; margin-top:24px">
+    <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px">
+      <div style="font-size:24px">🤖</div><h3 style="margin-top:8px; font-weight:700">Visual AI</h3><p style="font-size:13px; color:var(--text-dim); line-height:1.6">Finds visually similar items from thousands of images — no manual labels needed.</p>
+    </div>
+    <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px">
+      <div style="font-size:24px">📚</div><h3 style="margin-top:8px; font-weight:700">E-Waste Education</h3><p style="font-size:13px; color:var(--text-dim); line-height:1.6">Plain-language guides on what e-waste is and how to handle it.</p>
+    </div>
+    <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px">
+      <div style="font-size:24px">🗺️</div><h3 style="margin-top:8px; font-weight:700">Visual Discovery</h3><p style="font-size:13px; color:var(--text-dim); line-height:1.6">Interactive map of 16 visual communities showing how items group together.</p>
+    </div>
+    <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px">
+      <div style="font-size:24px">♻️</div><h3 style="margin-top:8px; font-weight:700">Circularity</h3><p style="font-size:13px; color:var(--text-dim); line-height:1.6">Connecting identification to recovery, reuse, and recycling pathways.</p>
+    </div>
+  </div>
+
+  <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px; margin-top:20px">
+    <h2 style="font-weight:700; margin:0">Our approach</h2>
+    <p style="font-size:13px; color:var(--text-dim); line-height:1.7; margin-top:8px">We start from visual discovery (16 macro-communities from 3,637 images, SigLIP2), keep interpretations tentative, and layer education on top. Future specialized classifiers (battery type, PCB sub-category) will plug into the same visual groups — architecture is ready, but we don’t fake results today.</p>
+  </div>
+
+  <div style="display:flex; gap:12px; margin-top:20px; flex-wrap:wrap">
+    <a href="/analyze" class="btn btn-teal">Analyze an Item</a>
+    <a href="/learn" class="btn btn-outline">Explore Learning</a>
+  </div>
+</div>
+
+<style>
+@media (max-width:640px){ div[style*="grid-template-columns: repeat(2,1fr)"]{grid-template-columns:1fr !important} }
+</style>
+{% endblock %}

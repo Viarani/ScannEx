@@ -1,0 +1,7 @@
+{
+  "n_neighbors": 15,
+  "min_dist": 0.0,
+  "n_components": 15,
+  "metric": "cosine",
+  "seed": 42
+}
