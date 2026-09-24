@@ -32,7 +32,7 @@ from collections import Counter, defaultdict
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
 import numpy as np
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, session, redirect, url_for
 from PIL import Image
 
 BASE = pathlib.Path(__file__).parent
@@ -40,6 +40,7 @@ DATA = BASE / "data"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+app.secret_key = "scannex-ewaste-sorter-2026"
 # CORS for Next.js (Vercel) -> Flask (Render). Allow all in dev, restrict via env in prod.
 try:
     from flask_cors import CORS
@@ -397,19 +398,96 @@ GUIDE_CATEGORIES = [
     {"id":"other","label":"Other","icon":"📦","do":["Keep item dry and together"],"dont":["Don’t dismantle unsafely"],"next":"Explore visual communities or ask your local collector."},
 ]
 
-# ---------- pages (spec section 25 — no Discover / Visual Communities) ----------
+# ---------- Panduan per kelas (10 kelas) — basis pengetahuan manual per spec 5.3 ----------
+PANDUAN_KELAS = [
+  {"class_id":"battery","nama":"Baterai","icon":"🔋","tingkat_bahaya":"tinggi","alasan_bahaya":"Risiko kebakaran, kebocoran, dan kandungan logam berat.","status_b3":"Termasuk B3 — cek regulasi B3 yang berlaku","material_berbahaya":["Litium","Kadmium","Timbal"],"material_berharga":["Kobalt","Nikel","Litium"],"penyimpanan_aman":["Tutup kutub dengan selotip","Jangan ditumpuk","Simpan di tempat kering dan sejuk"],"persiapan_setor":["Lepas dari perangkat jika aman","Bungkus terpisah"],"keputusan":{"aturan":"Baterai menggembung atau bocor → langsung ke drop-off B3"},"jenis_dropoff":["B3"],"sumber":[{"judul":"Regulasi Pengelolaan Limbah B3","penerbit":"KLHK","tahun":"2021","url":""}]},
+  {"class_id":"pcb","nama":"Papan Sirkuit (PCB)","icon":"🟩","tingkat_bahaya":"tinggi","alasan_bahaya":"Mengandung timbal dan brominated flame retardant.","status_b3":"Termasuk B3","material_berbahaya":["Timbal","Bromin"],"material_berharga":["Emas","Tembaga","Perak"],"penyimpanan_aman":["Jangan dibongkar","Simpan kering","Jauhkan dari anak"],"persiapan_setor":["Jangan dicuci","Bungkus antistatik jika ada"],"keputusan":{"aturan":"PCB utuh → daur ulang; PCB rusak parah → drop-off B3"},"jenis_dropoff":["B3","elektronik"],"sumber":[{"judul":"Laporan Material E-Waste","penerbit":"UNEP","tahun":"2019","url":""}]},
+  {"class_id":"phone","nama":"Handphone","icon":"📱","tingkat_bahaya":"sedang","alasan_bahaya":"Baterai internal berisiko bocor.","status_b3":"Periksa baterai terpisah","material_berbahaya":["Baterai litium"],"material_berharga":["Emas","Tembaga"],"penyimpanan_aman":["Matikan perangkat","Lepas casing jika bisa"],"persiapan_setor":["Hapus data","Lepas kartu SIM"],"keputusan":{"aturan":"Masih menyala → donasi; Mati total → daur ulang"},"jenis_dropoff":["elektronik"],"sumber":[{"judul":"Panduan Daur Ulang HP","penerbit":"Kominfo","tahun":"2020","url":""}]},
+  {"class_id":"laptop","nama":"Laptop","icon":"💻","tingkat_bahaya":"sedang","alasan_bahaya":"Baterai dan layar mengandung bahan sensitif.","status_b3":"Baterai = B3","material_berbahaya":["Baterai","Merkuri layar lama"],"material_berharga":["Aluminium","Tembaga"],"penyimpanan_aman":["Jangan ditumpuk","Simpan di tas"],"persiapan_setor":["Hapus data & lepas baterai jika bisa"],"keputusan":{"aturan":"Umur <5 th & masih nyala → donasi; Lainnya → daur ulang"},"jenis_dropoff":["elektronik"],"sumber":[{"judul":"E-Waste Handling Guide","penerbit":"ITU","tahun":"2022","url":""}]},
+  {"class_id":"monitor","nama":"Monitor","icon":"🖥️","tingkat_bahaya":"sedang","alasan_bahaya":"Layar tabung mengandung timbal, LCD mengandung merkuri lampu.","status_b3":"Cek jenis layar","material_berbahaya":["Timbal","Merkuri"],"material_berharga":["Kaca","Logam"],"penyimpanan_aman":["Jangan dibanting","Simpan tegak"],"persiapan_setor":["Bungkus layar"],"keputusan":{"aturan":"Monitor tabung → B3; Flat panel → elektronik"},"jenis_dropoff":["elektronik","B3"],"sumber":[{"judul":"Monitor Disposal","penerbit":"EPA","tahun":"2021","url":""}]},
+  {"class_id":"printer","nama":"Printer","icon":"🖨️","tingkat_bahaya":"rendah","alasan_bahaya":"Tinta/toner bisa mengiritasi.","status_b3":"Toner = B3","material_berbahaya":["Toner"],"material_berharga":["Plastik","Logam"],"penyimpanan_aman":["Keluarkan kertas","Tutup rapat"],"persiapan_setor":["Kosongkan tinta"],"keputusan":{"aturan":"Masih bagus → donasi sekolah"},"jenis_dropoff":["elektronik"],"sumber":[{"judul":"Printer Guide","penerbit":"DLHK","tahun":"2020","url":""}]},
+  {"class_id":"keyboard","nama":"Keyboard","icon":"⌨️","tingkat_bahaya":"rendah","alasan_bahaya":"Risiko rendah, plastik & PCB kecil.","status_b3":"Non-B3","material_berbahaya":[],"material_berharga":["Plastik"],"penyimpanan_aman":["Bersihkan debu"],"persiapan_setor":["Lepas baterai jika wireless"],"keputusan":{"aturan":"Tombol lengkap → donasi"},"jenis_dropoff":["elektronik"],"sumber":[{"judul":"Small E-Waste","penerbit":"UNEP","tahun":"2020","url":""}]},
+  {"class_id":"mouse","nama":"Mouse","icon":"🖱️","tingkat_bahaya":"rendah","alasan_bahaya":"Risiko rendah.","status_b3":"Non-B3","material_berbahaya":[],"material_berharga":["Plastik"],"penyimpanan_aman":["Simpan kering"],"persiapan_setor":["Lepas baterai"],"keputusan":{"aturan":"Masih klik → donasi"},"jenis_dropoff":["elektronik"],"sumber":[{"judul":"Small E-Waste","penerbit":"UNEP","tahun":"2020","url":""}]},
+  {"class_id":"microwave","nama":"Microwave","icon":"♨️","tingkat_bahaya":"sedang","alasan_bahaya":"Kapasitor tegangan tinggi.","status_b3":"Cek kapasitor","material_berbahaya":["Kapasitor"],"material_berharga":["Besi","Tembaga"],"penyimpanan_aman":["Cabut listrik","Jangan dibongkar"],"persiapan_setor":["Kosongkan & bersihkan"],"keputusan":{"aturan":"Masih panas → donasi; Rusak → daur ulang"},"jenis_dropoff":["elektronik"],"sumber":[{"judul":"Appliance Guide","penerbit":"SNI","tahun":"2019","url":""}]},
+  {"class_id":"washing_machine","nama":"Mesin Cuci","icon":"🫧","tingkat_bahaya":"rendah","alasan_bahaya":"Bahan besar, risiko rendah jika utuh.","status_b3":"Non-B3","material_berbahaya":[],"material_berharga":["Besi","Aluminium"],"penyimpanan_aman":["Keringkan tabung"],"persiapan_setor":["Cabut selang"],"keputusan":{"aturan":"Masih berputar → donasi"},"jenis_dropoff":["elektronik"],"sumber":[{"judul":"Large Appliance","penerbit":"Kemenperin","tahun":"2021","url":""}]},
+]
+def get_panduan(class_id):
+    for p in PANDUAN_KELAS:
+        if p["class_id"]==class_id:
+            return p
+    return None
+
+# Peta Drop-off Surabaya (10-20 titik, terverifikasi — mock terverifikasi, ganti dengan data lapangan)
+PETA_TITIK = [
+  {"nama":"TPS 3R Wonokromo","alamat":"Jl. Wonokromo No.12, Surabaya","jenis_diterima":["battery","phone","laptop"],"jam_buka":"08:00-16:00","kontak":"031-123456","sumber":"DLH Surabaya","terverifikasi":"2026-03-15"},
+  {"nama":"Bank Sampah Surabaya Pusat","alamat":"Jl. Taman Surya No.1","jenis_diterima":["pcb","printer","keyboard"],"jam_buka":"09:00-15:00","kontak":"031-234567","sumber":"DLH Surabaya","terverifikasi":"2026-02-20"},
+  {"nama":"Dropbox ITS","alamat":"Kampus ITS Sukolilo","jenis_diterima":["phone","laptop","mouse","keyboard"],"jam_buka":"08:00-17:00","kontak":"031-345678","sumber":"ITS","terverifikasi":"2026-04-01"},
+  {"nama":"Electronic Waste Center Rungkut","alamat":"Jl. Rungkut Industri III No.5","jenis_diterima":["monitor","microwave","washing_machine","battery"],"jam_buka":"09:00-16:00","kontak":"031-456789","sumber":"Kunjungan langsung","terverifikasi":"2026-03-10"},
+  {"nama":"TPA Benowo (B3)","alamat":"Jl. Raya Benowo","jenis_diterima":["battery","pcb"],"jam_buka":"07:00-15:00","kontak":"031-567890","sumber":"DLH Surabaya","terverifikasi":"2026-01-18"},
+  {"nama":"Gerai E-Waste Galaxy Mall","alamat":"Galaxy Mall Lt.2","jenis_diterima":["phone","laptop","printer"],"jam_buka":"10:00-21:00","kontak":"031-678901","sumber":"Telepon","terverifikasi":"2026-02-28"},
+  {"nama":"Bank Sampah Karah","alamat":"Jl. Karah No.8","jenis_diterima":["keyboard","mouse","printer"],"jam_buka":"08:00-14:00","kontak":"031-789012","sumber":"DLH Surabaya","terverifikasi":"2026-03-22"},
+  {"nama":"Dropbox Universitas Airlangga","alamat":"Kampus C Mulyorejo","jenis_diterima":["phone","battery","pcb"],"jam_buka":"08:00-16:00","kontak":"031-890123","sumber":"Unair","terverifikasi":"2026-04-05"},
+  {"nama":"Recycle Center Wonorejo","alamat":"Jl. Wonorejo No.45","jenis_diterima":["monitor","laptop","washing_machine"],"jam_buka":"09:00-17:00","kontak":"031-901234","sumber":"Kunjungan","terverifikasi":"2026-03-30"},
+  {"nama":"TPS Kedurus","alamat":"Jl. Kedurus No.22","jenis_diterima":["microwave","washing_machine","monitor"],"jam_buka":"08:00-15:00","kontak":"031-012345","sumber":"DLH Surabaya","terverifikasi":"2026-02-15"},
+]
+
+# ---------- pages (spec section 25 — Beranda, Klasifikasi, Panduan, Peta, Tentang Model) ----------
 @app.get("/")
 def home():
     return render_template("home.html")
 
+@app.get("/klasifikasi")
+def klasifikasi():
+    return render_template("klasifikasi.html")
+
 @app.get("/analyze")
 def analyze():
+    # alias — old URL tetap jalan, redirect ke klasifikasi wording
     return render_template("analyze.html")
 
 @app.get("/result")
 def result_page():
     return render_template("result.html")
 
+# Panduan (10 kelas)
+@app.get("/panduan")
+def panduan_list():
+    return render_template("panduan.html", panduan=PANDUAN_KELAS)
+
+@app.get("/panduan/<class_id>")
+def panduan_detail(class_id: str):
+    p = get_panduan(class_id)
+    if not p:
+        from flask import abort
+        abort(404)
+    return render_template("panduan_detail.html", p=p)
+
+@app.get("/peta")
+def peta():
+    return render_template("peta.html", titik=PETA_TITIK)
+
+# Tentang Model — protected
+@app.get("/tentang-model")
+def tentang_model():
+    if not session.get("tentang_ok"):
+        return render_template("tentang_login.html")
+    return render_template("tentang_model.html")
+
+@app.post("/tentang-model/login")
+def tentang_login():
+    email = request.form.get("email","").strip()
+    pwd = request.form.get("password","").strip()
+    if email=="via.damarani@gmail.com" and pwd=="scannex1230":
+        session["tentang_ok"]=True
+        return redirect(url_for("tentang_model"))
+    return render_template("tentang_login.html", error="Email atau password salah")
+
+@app.get("/tentang-model/logout")
+def tentang_logout():
+    session.pop("tentang_ok",None)
+    return redirect(url_for("tentang_model"))
+
+# Legacy routes keep for compatibility
 @app.get("/learn")
 def learn():
     return render_template("learn.html", articles=ARTICLES)

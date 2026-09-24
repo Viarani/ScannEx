@@ -15,20 +15,18 @@
       ScannEx
     </a>
     <nav class="nav-links" id="navLinks">
-      <a href="/analyze" class="{% if request.path.startswith('/analyze') or request.path.startswith('/result') %}active{% endif %}">Analyze</a>
-      <a href="/learn" class="{% if request.path.startswith('/learn') %}active{% endif %}">Learn</a>
-      <a href="/guides" class="{% if request.path.startswith('/guides') %}active{% endif %}">Guides</a>
-      <a href="/about" class="{% if request.path.startswith('/about') %}active{% endif %}">About</a>
+      <a href="/panduan" class="{% if request.path.startswith('/panduan') %}active{% endif %}">Panduan</a>
+      <a href="/peta" class="{% if request.path.startswith('/peta') %}active{% endif %}">Peta Drop-off</a>
+      <a href="/tentang-model" class="{% if request.path.startswith('/tentang-model') %}active{% endif %}">Tentang Model</a>
     </nav>
-    <a class="nav-cta" href="/analyze">Analyze an Item</a>
+    <a class="nav-cta" href="/klasifikasi">Analyze an Item</a>
     <button class="hamburger" id="hamburger" aria-label="menu"><span></span><span></span><span></span></button>
   </div>
   <div class="mobile-menu" id="mobileMenu">
-    <a href="/analyze" class="{% if request.path.startswith('/analyze') %}active{% endif %}">Analyze</a>
-    <a href="/learn" class="{% if request.path.startswith('/learn') %}active{% endif %}">Learn</a>
-    <a href="/guides" class="{% if request.path.startswith('/guides') %}active{% endif %}">Guides</a>
-    <a href="/about" class="{% if request.path.startswith('/about') %}active{% endif %}">About</a>
-    <a href="/analyze" class="nav-cta" style="display:inline-block; margin-top:8px; text-align:center">Analyze an Item</a>
+    <a href="/klasifikasi" class="{% if request.path.startswith('/klasifikasi') %}active{% endif %}">Analyze an Item</a>
+    <a href="/panduan" class="{% if request.path.startswith('/panduan') %}active{% endif %}">Panduan</a>
+    <a href="/peta" class="{% if request.path.startswith('/peta') %}active{% endif %}">Peta Drop-off</a>
+    <a href="/tentang-model" class="{% if request.path.startswith('/tentang-model') %}active{% endif %}">Tentang Model</a>
   </div>
 </header>
 

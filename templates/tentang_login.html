@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Masuk — Tentang Model{% endblock %}
+{% block content %}
+<div class="container" style="padding:60px 20px; max-width:420px">
+  <h1 style="font-size:24px; font-weight:800">Masuk untuk melihat Tentang Model</h1>
+  <p style="font-size:13px; color:#64748b; margin-top:6px">Halaman untuk juri — masukkan email & password.</p>
+  {% if error %}<div style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:10px 12px; border-radius:12px; font-size:13px; margin-top:12px">{{ error }}</div>{% endif %}
+  <form method="post" action="/tentang-model/login" style="margin-top:16px; border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px; display:flex; flex-direction:column; gap:12px">
+    <label style="font-size:13px; font-weight:600">Email<input name="email" type="email" required value="via.damarani@gmail.com" style="margin-top:4px; width:100%; border:1px solid var(--line); border-radius:10px; padding:10px"></label>
+    <label style="font-size:13px; font-weight:600">Password<input name="password" type="password" required style="margin-top:4px; width:100%; border:1px solid var(--line); border-radius:10px; padding:10px"></label>
+    <button type="submit" style="background:#0e7c7b; color:#fff; padding:12px; border-radius:999px; font-weight:700; border:0">Masuk</button>
+  </form>
+  <p style="font-size:11px; color:#94a3b8; margin-top:12px">Demo: via.damarani@gmail.com / scannex1230</p>
+</div>
+{% endblock %}

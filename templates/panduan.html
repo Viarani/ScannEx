@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Panduan — ScannEx{% endblock %}
+{% block content %}
+<div class="container" style="padding:32px 20px">
+  <h1 style="font-size:32px; font-weight:800; letter-spacing:-0.02em">Panduan per jenis perangkat</h1>
+  <p style="color:#64748b; max-width:640px">10 kelas yang dikenali model. Tiap halaman berisi tingkat bahaya, material, cara simpan aman, dan rujukan sumber — kurasi manual, bukan prediksi AI.</p>
+
+  <div style="display:grid; grid-template-columns: repeat(5,1fr); gap:16px; margin-top:24px">
+    {% for p in panduan %}
+    <a href="/panduan/{{ p.class_id }}" style="text-decoration:none; color:var(--text); border:1px solid var(--line); border-radius:20px; background:var(--panel); backdrop-filter:blur(10px); padding:16px; display:flex; flex-direction:column; text-align:center">
+      <div style="width:48px; height:48px; border-radius:14px; background:rgba(255,255,255,0.06); border:1px solid var(--line); display:grid; place-items:center; margin:0 auto; font-size:24px">{{ p.icon }}</div>
+      <div style="font-weight:700; margin-top:10px; color:var(--text)">{{ p.nama }}</div>
+      <div style="font-size:11px; margin-top:4px; padding:4px 8px; border-radius:999px; display:inline-block; {% if p.tingkat_bahaya=='tinggi' %}background:#fef2f2; color:#991b1b; border:1px solid #fecaca{% elif p.tingkat_bahaya=='sedang' %}background:#fffbeb; color:#92400e; border:1px solid #fde68a{% else %}background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0{% endif %}">{{ p.tingkat_bahaya|upper }}</div>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:8px; flex:1">{{ p.alasan_bahaya }}</div>
+      <div style="margin-top:10px; font-weight:600; color:var(--teal); font-size:12px">Lihat panduan →</div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+<style>
+@media (max-width:1024px){ div[style*="grid-template-columns: repeat(5"]{grid-template-columns: repeat(3,1fr) !important} }
+@media (max-width:640px){ div[style*="grid-template-columns: repeat(5"]{grid-template-columns: repeat(2,1fr) !important} }
+</style>
+{% endblock %}

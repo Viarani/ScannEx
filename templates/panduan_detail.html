@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ p.nama }} — Panduan — ScannEx{% endblock %}
+{% block content %}
+<div class="container" style="padding:32px 20px; max-width:860px">
+  <a href="/panduan" style="font-size:13px; color:#64748b">← Panduan</a>
+  <div style="margin-top:12px; display:flex; gap:16px; align-items:center">
+    <div style="width:56px; height:56px; border-radius:16px; background:rgba(255,255,255,0.06); display:grid; place-items:center; font-size:28px">{{ p.icon }}</div>
+    <div>
+      <h1 style="font-size:28px; font-weight:800; margin:0">{{ p.nama }}</h1>
+      <div style="margin-top:4px; display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; {% if p.tingkat_bahaya=='tinggi' %}background:#fef2f2; color:#991b1b; border:1px solid #fecaca{% elif p.tingkat_bahaya=='sedang' %}background:#fffbeb; color:#92400e; border:1px solid #fde68a{% else %}background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0{% endif %}">BAHAYA {{ p.tingkat_bahaya|upper }}</div>
+    </div>
+  </div>
+  <p style="color:#64748b; margin-top:8px">{{ p.alasan_bahaya }} · Status B3: {{ p.status_b3 }}</p>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px">
+    <div style="border:1px solid #fecaca; background:#fef2f2; border-radius:16px; padding:16px">
+      <h3 style="font-weight:700; color:#991b1b; margin:0">Material berbahaya</h3>
+      <ul style="margin:8px 0 0; padding-left:18px; font-size:13px; color:#7f1d1d">
+        {% for m in p.material_berbahaya %}<li>{{ m }}</li>{% else %}<li>Tidak ada — risiko rendah</li>{% endfor %}
+      </ul>
+    </div>
+    <div style="border:1px solid #a7f3d0; background:#ecfdf5; border-radius:16px; padding:16px">
+      <h3 style="font-weight:700; color:#065f46; margin:0">Material berharga</h3>
+      <ul style="margin:8px 0 0; padding-left:18px; font-size:13px; color:#065f46">
+        {% for m in p.material_berharga %}<li>{{ m }}</li>{% else %}<li>-</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px; margin-top:16px">
+    <h3 style="font-weight:700; margin:0">Cara menyimpan sementara dengan aman</h3>
+    <ul style="margin:8px 0 0; padding-left:18px; font-size:13px; line-height:1.7">
+      {% for s in p.penyimpanan_aman %}<li>{{ s }}</li>{% endfor %}
+    </ul>
+  </div>
+
+  <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px; margin-top:16px">
+    <h3 style="font-weight:700; margin:0">Persiapan sebelum disetor</h3>
+    <ul style="margin:8px 0 0; padding-left:18px; font-size:13px; line-height:1.7">
+      {% for s in p.persiapan_setor %}<li>{{ s }}</li>{% endfor %}
+    </ul>
+  </div>
+
+  <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px; margin-top:16px">
+    <h3 style="font-weight:700; margin:0">Keputusan: perbaiki / donasi / daur ulang</h3>
+    <p style="font-size:13px; color:var(--text-dim); margin-top:6px">{{ p.keputusan.aturan }}</p>
+    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+      <a href="/peta?filter={{ p.class_id }}" style="background:#0e7c7b; color:#fff; padding:8px 14px; border-radius:999px; font-weight:600; font-size:13px; text-decoration:none">📍 Titik drop-off untuk {{ p.nama }}</a>
+      <a href="/klasifikasi" style="border:1px solid var(--line); background:var(--panel); padding:8px 14px; border-radius:999px; font-weight:600; font-size:13px">Klasifikasikan barang lain</a>
+    </div>
+  </div>
+
+  <div style="margin-top:16px; font-size:12px; color:#64748b">
+    <div style="font-weight:700">Jenis titik drop-off yang cocok: {{ p.jenis_dropoff|join(", ") }}</div>
+  </div>
+
+  <div style="border:1px solid var(--line); border-radius:16px; background:var(--panel); padding:16px; margin-top:16px">
+    <h3 style="font-weight:700; margin:0">Sumber rujukan</h3>
+    <ul style="margin:8px 0 0; padding-left:18px; font-size:12px; color:var(--text-dim)">
+      {% for s in p.sumber %}<li>{{ s.judul }} — {{ s.penerbit }} ({{ s.tahun }}) {% if s.url %}<a href="{{ s.url }}">{{ s.url }}</a>{% endif %}</li>{% else %}<li>Belum ada sumber terverifikasi — field dikosongkan sesuai prinsip.</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+{% endblock %}

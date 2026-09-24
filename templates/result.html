@@ -1,110 +1,123 @@
 ﻿{% extends "base.html" %}
-{% block title %}Result — E-Waste Intelligence{% endblock %}
+{% block title %}Hasil — ScannEx{% endblock %}
 {% block content %}
-<div class="container" style="padding:32px 20px; max-width:1100px">
+<div class="container" style="padding:32px 20px; max-width:860px">
   <div id="noResult" style="display:none; text-align:center; padding:60px 20px">
-    <h1 style="font-size:28px; font-weight:800">No analysis yet</h1>
-    <p style="color:var(--text-dim)">Analyze an item with your camera or upload a photo to see results here.</p>
-    <a href="/analyze" class="btn btn-teal" style="display:inline-block; margin-top:16px">Analyze an Item</a>
+    <h1 style="font-size:24px; font-weight:800">Belum ada analisis</h1>
+    <p style="color:#64748b">Klasifikasikan barang via kamera atau unggah foto.</p>
+    <a href="/klasifikasi" class="btn btn-teal" style="display:inline-block; margin-top:12px">Klasifikasi sekarang</a>
   </div>
 
   <div id="hasResult" style="display:none">
-    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:28px; align-items:start">
-      <div style="border:1px solid var(--line); border-radius:24px; background:var(--panel); padding:12px">
-        <div style="aspect-ratio:4/3; border-radius:16px; overflow:hidden; background:var(--panel); display:grid; place-items:center">
-          <img id="resultImg" style="width:100%; height:100%; object-fit:contain; display:none">
-          <span id="resultPlaceholder" style="color:var(--text-dim); font-size:13px">Your image</span>
-        </div>
-        <div style="font-size:11px; color:var(--text-dim); text-align:center; margin-top:8px">Analyzed image · Visual identification only</div>
+    <!-- CARD PER SPEC 5.2 -->
+    <div style="border:1px solid var(--line); border-radius:24px; background:var(--panel); overflow:hidden">
+      <div id="previewWrap" style="aspect-ratio:4/3; background:rgba(255,255,255,0.04); border:1px solid var(--line); display:grid; place-items:center; overflow:hidden; border-radius:16px">
+        <img id="resultImg" style="width:100%; height:100%; object-fit:contain; display:none">
+        <span id="ph" style="color:#94a3b8; font-size:13px">Foto akan tampil di sini</span>
       </div>
-
-      <div>
-        <div style="font-size:11px; letter-spacing:0.18em; font-weight:700; color:var(--teal)">WE FOUND SOMETHING</div>
-        <h1 id="resultTitle" style="font-size:28px; font-weight:800; margin-top:6px; letter-spacing:-0.02em"></h1>
-        <div id="resultSub" style="color:var(--text-dim); margin-top:4px"></div>
-
-        <div style="margin-top:16px; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px">
-          <div style="font-size:11px; font-weight:700; letter-spacing:0.12em; color:var(--text-dim)">VISUAL MATCH</div>
-          <div id="resultInterpretation" style="font-weight:600; margin-top:4px"></div>
-          <div id="resultMeta" style="font-size:13px; color:var(--text-dim)"></div>
-          <div id="resultAgreement" style="font-size:13px; margin-top:6px"></div>
-          <div id="resultAmbiguous" style="font-size:12px; color:var(--text-dim); margin-top:6px; display:none">We avoid forcing a specific name when the visual group is mixed. This is a visually similar collection, not a definitive label.</div>
+      <div style="padding:16px">
+        <div id="top3" style="font-weight:700"></div>
+        <div id="others" style="font-size:12px; color:#64748b"></div>
+        <div id="hazard" style="margin-top:12px; padding:10px 12px; border-radius:12px; font-weight:700; display:flex; gap:8px; align-items:center"></div>
+        <div style="margin-top:12px; border-top:1px solid #f1f5f9; padding-top:12px">
+          <div style="font-weight:700; font-size:13px">Sebelum disetor:</div>
+          <ul id="steps" style="margin:6px 0 0; padding-left:18px; font-size:13px; line-height:1.6"></ul>
         </div>
-
-        <div style="margin-top:16px; border:1px solid var(--line); border-radius:16px; background:var(--panel); padding:16px">
-          <h3 style="font-weight:700; margin:0">About this item</h3>
-          <p id="aboutText" style="font-size:13px; color:var(--text-dim); line-height:1.6; margin-top:6px"></p>
+        <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+          <a id="dropoffBtn" href="/peta" style="background:#0e7c7b; color:#fff; padding:10px 16px; border-radius:999px; font-weight:600; font-size:13px; text-decoration:none">📍 Titik drop-off</a>
+          <a href="/panduan" style="border:1px solid var(--line); padding:10px 16px; border-radius:999px; font-weight:600; font-size:13px">Lihat panduan</a>
         </div>
-
-        <div style="margin-top:16px; border:1px solid var(--line); border-radius:16px; background:var(--panel); padding:16px">
-          <h3 style="font-weight:700; margin:0">What you can do next</h3>
-          <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px; font-size:13px">
-            <a href="/learn" style="font-weight:600">Learn more about this type of e-waste →</a>
-            <a href="/communities" style="font-weight:600">Explore similar visual groups →</a>
-            <a href="/guides" style="font-weight:600">View handling guide →</a>
+        <div style="margin-top:12px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px">
+          <div style="font-weight:700; font-size:13px">Keputusan: perbaiki / donasi / daur ulang</div>
+          <div id="decision" style="font-size:13px; color:var(--text-dim); margin-top:4px"></div>
+          <div style="margin-top:8px; display:flex; gap:8px">
+            <button onclick="decide('nyala')" style="flex:1; border:1px solid var(--line); background:var(--panel); padding:8px; border-radius:999px; font-size:12px">Masih menyala?</button>
+            <button onclick="decide('rusak')" style="flex:1; border:1px solid var(--line); background:var(--panel); padding:8px; border-radius:999px; font-size:12px">Ada kerusakan?</button>
           </div>
         </div>
+        <div id="uncertain" style="display:none; margin-top:12px; background:#fffbeb; border:1px solid #fde68a; padding:10px 12px; border-radius:12px; font-size:13px; color:#92400e">
+          Tidak yakin — coba foto ulang dengan cahaya lebih terang, latar kontras, dan jarak dekat. Sementara, lihat panduan umum e-waste.
+        </div>
       </div>
     </div>
 
-    <div style="margin-top:32px">
-      <h2 style="font-size:18px; font-weight:800">Explore similar items</h2>
-      <p style="font-size:13px; color:var(--text-dim)">Visually matched from our reference collection — not a purchase list.</p>
-      <div id="similarGrid" style="display:grid; grid-template-columns: repeat(5,1fr); gap:12px; margin-top:12px"></div>
-      <p style="font-size:11px; color:var(--text-dim); margin-top:8px">We show filename placeholders here; replace with real thumbnails when available.</p>
-    </div>
-
-    <div style="margin-top:24px; display:flex; gap:12px; flex-wrap:wrap">
-      <a href="/analyze" class="btn btn-teal">Analyze another item</a>
-      <a href="/guides" class="btn btn-outline">See handling guide</a>
+    <div style="margin-top:16px; display:flex; gap:8px">
+      <a href="/klasifikasi" class="btn btn-teal">Klasifikasi lagi</a>
+      <a href="/peta" class="btn" style="border:1px solid var(--line); background:var(--panel); padding:10px 16px; border-radius:999px; font-weight:600">Peta Drop-off</a>
     </div>
   </div>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
+const mapToPanduan = {
+  "Baterai": "battery", "Baterai HP": "battery", "Baterai Laptop": "battery",
+  "PCB / Motherboard": "pcb", "PCB / circuit-board-like": "pcb",
+  "Handphone": "phone", "Smartphone / mobile-like": "phone",
+  "Laptop": "laptop",
+  "Monitor / Keyboard / Komputer": "monitor", "Televisi": "monitor", "TV / television-like": "monitor",
+  "Printer": "printer", "Printer-like": "printer",
+  "Keyboard": "keyboard", "Keyboard-like": "keyboard",
+  "Mouse": "mouse", "Mouse / computer peripheral-like": "mouse",
+  "Microwave": "microwave", "Microwave-like": "microwave",
+  "Mesin Cuci": "washing_machine", "Washing-machine-like": "washing_machine",
+  "Elektronik Rusak": "other", "Mixed e-waste pile / junk-like": "other", "Radio / Penyetel Musik": "other", "Sakelar": "other"
+};
+const hazardMap = {
+  "battery": {label:"BAHAYA TINGGI", color:"#fef2f2", border:"#fecaca", text:"#991b1b", desc:"Jangan buang ke tong sampah biasa."},
+  "pcb": {label:"BAHAYA TINGGI", color:"#fef2f2", border:"#fecaca", text:"#991b1b", desc:"Jangan dibongkar atau dibakar."},
+  "phone": {label:"BAHAYA SEDANG", color:"#fffbeb", border:"#fde68a", text:"#92400e", desc:"Lepas baterai jika bisa, hapus data."},
+  "laptop": {label:"BAHAYA SEDANG", color:"#fffbeb", border:"#fde68a", text:"#92400e", desc:"Hapus data & lepas baterai."},
+  "monitor": {label:"BAHAYA SEDANG", color:"#fffbeb", border:"#fde68a", text:"#92400e", desc:"Jangan banting layar."},
+  "default": {label:"BAHAYA RENDAH", color:"#ecfdf5", border:"#a7f3d0", text:"#065f46", desc:"Simpan kering sebelum disetor."}
+};
 try{
   const raw=sessionStorage.getItem('ewaste_last_result');
   const preview=sessionStorage.getItem('ewaste_preview');
-  if(!raw){
-    document.getElementById('noResult').style.display='block';
-  } else {
+  if(!raw){ document.getElementById('noResult').style.display='block'; } else {
     const j=JSON.parse(raw);
     document.getElementById('hasResult').style.display='block';
-    if(preview){
-      const img=document.getElementById('resultImg');
-      img.src=preview; img.style.display='block';
-      document.getElementById('resultPlaceholder').style.display='none';
+    if(preview){ const img=document.getElementById('resultImg'); img.src=preview; img.style.display='block'; document.getElementById('ph').style.display='none'; }
+    // top-3: use vote_distribution sorted by count, map to names
+    const votes = j.vote_distribution || {};
+    const sorted = Object.entries(votes).sort((a,b)=>b[1]-a[1]);
+    const total = Object.values(votes).reduce((a,b)=>a+b,0) || 10;
+    const top = sorted.slice(0,3);
+    const topNames = top.map(([k,c])=> ({id:k, name: (j.names && j.names[k]) || k, pct: Math.round(c/total*100)}));
+    if(topNames[0]){
+      document.getElementById('top3').textContent = 'Terdeteksi: ' + topNames[0].name.toUpperCase() + ' ('+topNames[0].pct+'%)';
+      document.getElementById('others').textContent = topNames.slice(1).map(t=> t.name+' '+t.pct+'%').join(' · ');
+    } else {
+      document.getElementById('top3').textContent = 'Terdeteksi: ' + (j.interpretation||'Electronic item') + ' ('+(j.neighbour_agreement_pct||'-')+'%)';
     }
-    const isAmbiguous = (j.interpretation||'').toLowerCase().includes('mixed') || (j.interpretation||'').toLowerCase().includes('ambiguous') || (j.neighbour_agreement_pct||100) < 55;
-    const heading = isAmbiguous ? 'We found a visually similar group' : (j.interpretation || 'Electronic device');
-    const sub = isAmbiguous ? 'Similar electronic item' : 'Electronic device';
-    document.getElementById('resultTitle').textContent = heading;
-    document.getElementById('resultSub').textContent = sub + ' · ' + (isAmbiguous ? 'This represents a visual identification — it groups items that look alike.' : '');
-    document.getElementById('resultInterpretation').textContent = j.interpretation || '';
-    document.getElementById('resultMeta').textContent = (j.size||'') + ' visual items · ' + (j.share_pct||'') + '% of dataset · ' + (j.coherence||'');
-    document.getElementById('resultAgreement').innerHTML = j.neighbour_agreement_pct!=null ? '<b>Neighbour agreement: '+j.neighbour_agreement_pct+'%</b> <span style="color:var(--text-dim)">· Visual match</span>' : 'Visual match';
-    if(isAmbiguous) document.getElementById('resultAmbiguous').style.display='block';
-    const aboutMap = {
-      'Battery': 'Batteries contain materials that need careful handling. Keep them dry and separate from other waste.',
-      'PCB': 'Circuit boards often contain recoverable metals. Handling should avoid breaking or burning.',
-      'Washing': 'Large appliances are bulky and often collected via dedicated pickup services.',
-      'Microwave': 'Large appliances are bulky and often collected via dedicated pickup services.'
+    // hazard
+    const cls = mapToPanduan[j.interpretation] || mapToPanduan[topNames[0]?.name] || 'other';
+    const h = hazardMap[cls] || hazardMap.default;
+    document.getElementById('hazard').style.background=h.color;
+    document.getElementById('hazard').style.border='1px solid '+h.border;
+    document.getElementById('hazard').style.color=h.text;
+    document.getElementById('hazard').innerHTML = '⚠ '+h.label+'<span style="font-weight:400; margin-left:8px">'+h.desc+'</span>';
+    // steps
+    const stepsMap = {
+      battery: ['Tutup kutub dengan selotip','Jangan ditumpuk','Simpan di tempat kering'],
+      pcb: ['Jangan dibongkar','Simpan kering','Bungkus antistatik'],
+      phone: ['Hapus data','Lepas SIM','Matikan'],
+      default: ['Hapus data jika ada','Jangan dibongkar','Simpan kering']
     };
-    let about='Electronic items vary in materials and handling needs. Exploring similar items can help you decide the next step.';
-    for(const k in aboutMap){ if((j.interpretation||'').includes(k)) about=aboutMap[k]; }
-    document.getElementById('aboutText').textContent=about;
-    const grid=document.getElementById('similarGrid');
-    (j.top5||[]).forEach(t=>{
-      const name = (j.names && j.names[String(t.community)]) || 'Visual group';
-      const div=document.createElement('div');
-      div.style.cssText='border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel)';
-      div.innerHTML='<div style="aspect-ratio:1; background:var(--panel); display:grid; place-items:center; padding:8px; text-align:center; font-size:11px; color:var(--text-dim)">'+t.filename+'</div><div style="padding:10px"><div style="font-size:12px; font-weight:600">'+name+'</div><div style="font-size:11px; color:var(--text-dim)">Strong visual match</div></div>';
-      grid.appendChild(div);
-    });
+    const steps = stepsMap[cls] || stepsMap.default;
+    document.getElementById('steps').innerHTML = steps.map(s=>'<li>'+s+'</li>').join('');
+    document.getElementById('dropoffBtn').href = '/peta?filter='+cls;
+    // decision
+    document.getElementById('decision').textContent = 'Jawab pertanyaan singkat di atas untuk saran perbaiki/donasi/daur ulang. Aturan contoh: Baterai menggembung → langsung drop-off B3';
+    // uncertain
+    const isUncertain = (j.neighbour_agreement_pct||100) < 50 || (j.mean_topk_similarity||1) < 0.6;
+    if(isUncertain) document.getElementById('uncertain').style.display='block';
   }
-}catch(e){
-  document.getElementById('noResult').style.display='block';
+}catch(e){ document.getElementById('noResult').style.display='block'; }
+function decide(type){
+  const el=document.getElementById('decision');
+  if(type==='nyala') el.textContent='Masih menyala & umur <5 th → pertimbangkan donasi setelah hapus data.';
+  else el.textContent='Ada kerusakan/bocor → jangan diperbaiki sendiri, langsung ke drop-off.';
 }
 </script>
 {% endblock %}

@@ -8,17 +8,17 @@
   </div>
 
   <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:32px">
-    <button onclick="chooseCamera()" style="border:1px solid #e2e8f0; border-radius:24px; background:#fff; padding:28px; text-align:center; cursor:pointer">
+    <button onclick="chooseCamera()" style="border:1px solid var(--line); border-radius:24px; background:var(--panel); padding:28px; text-align:center; cursor:pointer">
       <div style="width:56px; height:56px; border-radius:16px; background:#ecfdf5; display:grid; place-items:center; margin:0 auto; font-size:28px">📷</div>
       <div style="font-weight:700; margin-top:12px">Use Camera</div>
       <div style="font-size:12px; color:#64748b; margin-top:4px">Live preview, full-screen scan</div>
       <div style="margin-top:12px; display:inline-block; background:#0e7c7b; color:#fff; padding:8px 16px; border-radius:999px; font-weight:600; font-size:13px">Use Camera</div>
     </button>
-    <button onclick="chooseUpload()" style="border:1px solid #e2e8f0; border-radius:24px; background:#fff; padding:28px; text-align:center; cursor:pointer">
-      <div style="width:56px; height:56px; border-radius:16px; background:#f1f5f9; display:grid; place-items:center; margin:0 auto; font-size:28px">🖼️</div>
+    <button onclick="chooseUpload()" style="border:1px solid var(--line); border-radius:24px; background:var(--panel); padding:28px; text-align:center; cursor:pointer">
+      <div style="width:56px; height:56px; border-radius:16px; background:rgba(255,255,255,0.06); display:grid; place-items:center; margin:0 auto; font-size:28px">🖼️</div>
       <div style="font-weight:700; margin-top:12px">Upload Image</div>
       <div style="font-size:12px; color:#64748b; margin-top:4px">JPG, PNG, WEBP — drag & drop</div>
-      <div style="margin-top:12px; display:inline-block; border:1px solid #e2e8f0; padding:8px 16px; border-radius:999px; font-weight:600; font-size:13px">Choose Image</div>
+      <div style="margin-top:12px; display:inline-block; border:1px solid var(--line); padding:8px 16px; border-radius:999px; font-weight:600; font-size:13px">Choose Image</div>
     </button>
   </div>
   <p style="text-align:center; font-size:11px; color:#94a3b8; margin-top:16px">Works with your camera · No technical knowledge needed</p>
@@ -43,7 +43,7 @@
   </div>
   <div style="background:#000; padding:16px; display:flex; gap:12px; justify-content:center; align-items:center; flex-wrap:wrap; border-top:1px solid #1e293b">
     <button id="btnScan" class="btn" style="background:#0e7c7b; color:#fff; padding:12px 28px; border-radius:999px; font-weight:700; border:0" onclick="capture()">Scan Item</button>
-    <button class="btn" style="background:#fff; color:#000; padding:12px 20px; border-radius:999px; font-weight:600; border:0" onclick="closeCamera()">Close</button>
+    <button class="btn" style="background:var(--panel); color:#000; padding:12px 20px; border-radius:999px; font-weight:600; border:0" onclick="closeCamera()">Close</button>
     <span id="statusCamera" style="color:#94a3b8; font-size:12px; margin-left:8px"></span>
   </div>
   <div id="cameraPreview" style="display:none; position:absolute; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.96); border-radius:16px; padding:8px">
@@ -57,7 +57,7 @@
     <button onclick="backToChoice()" style="font-size:13px; color:#64748b; background:none; border:0; cursor:pointer">← Back to choices</button>
   </div>
   <div id="dropzone" class="dropzone" style="margin-top:16px">
-    <div style="width:44px; height:44px; border-radius:14px; background:#fff; border:1px solid #e2e8f0; display:grid; place-items:center; margin:0 auto">🖼️</div>
+    <div style="width:44px; height:44px; border-radius:14px; background:var(--panel); border:1px solid var(--line); display:grid; place-items:center; margin:0 auto">🖼️</div>
     <div style="font-weight:600; margin-top:10px">Drop an electronic item image here</div>
     <div style="font-size:13px; color:#64748b">or</div>
     <label style="margin-top:10px; display:inline-block; background:var(--teal); color:#fff; padding:10px 18px; border-radius:999px; font-weight:600; cursor:pointer">
@@ -67,7 +67,7 @@
     <div style="font-size:11px; color:#94a3b8; margin-top:8px">JPG, JPEG, PNG, WEBP — max 16MB</div>
   </div>
   <div id="uploadPreview" style="display:none; text-align:center; margin-top:16px">
-    <img id="uploadPreviewImg" style="max-width:320px; border-radius:16px; border:1px solid #e2e8f0; margin:0 auto; display:block">
+    <img id="uploadPreviewImg" style="max-width:320px; border-radius:16px; border:1px solid var(--line); margin:0 auto; display:block">
     <div style="font-size:13px; color:#64748b; margin-top:8px" id="uploadStatus">Ready to analyze</div>
   </div>
   <div id="statusUpload" style="text-align:center; margin-top:12px; font-size:13px; color:#64748b"></div>

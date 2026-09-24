@@ -1,80 +1,108 @@
 {% extends "base.html" %}
-{% block title %}Home — E-Waste Intelligence{% endblock %}
+{% block title %}Beranda — ScannEx{% endblock %}
 {% block content %}
-<!-- HERO — centered, dark with speckles floating edge→center (image 2 style, keep current teal colors) -->
-<section class="hero" id="heroTop" style="position:relative; background:#0a1620; overflow:hidden; padding:80px 20px 90px; text-align:center">
+<!-- HERO -->
+<section class="hero" id="heroTop" style="position:relative; background:#0a1620; overflow:hidden; padding:120px 20px 120px; text-align:center; min-height:92vh; display:flex; align-items:center; justify-content:center">
   <canvas id="heroCanvas" style="position:absolute; inset:0; width:100%; height:100%"></canvas>
   <div style="position:relative; z-index:1; max-width:760px; margin:0 auto">
-    <p class="kicker" style="color:#5eead4; letter-spacing:0.18em; font-size:11px; font-weight:700">AI-POWERED E-WASTE INTELLIGENCE</p>
-    <h1 style="margin-top:16px; font-size:48px; line-height:0.95; letter-spacing:-0.04em; font-weight:800; color:#fff">Give your old electronics <br><span style="color:#5eead4">a second look.</span></h1>
-    <p class="lead" style="margin:16px auto 0; color:#cbd5e1; font-size:17px; max-width:560px">Use AI to recognize electronic items and discover how they can be handled, recovered, or recycled more responsibly.</p>
-    <div class="hero-ctas" style="margin-top:24px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap">
-      <a class="btn-primary" href="/analyze" style="background:#0e7c7b">Analyze an Item →</a>
-      <a class="btn-secondary" href="/learn" style="background:transparent; border-color:rgba(255,255,255,0.3); color:#fff">Learn About E-Waste</a>
+    <h1 style="font-size:44px; line-height:0.95; letter-spacing:-0.03em; font-weight:800; color:#fff">Give your old electronics <br><span style="color:#5eead4">a second look.</span></h1>
+    <p style="margin:16px auto 0; color:#cbd5e1; font-size:16px; max-width:560px">Use AI to recognize electronic items and discover how they can be handled, recovered, or recycled more responsibly.</p>
+    <div style="margin-top:20px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap">
+      <a href="/klasifikasi" class="btn btn-teal" style="background:#0e7c7b; color:#fff; padding:12px 22px; border-radius:999px; font-weight:700">Analyze an Item</a>
+      <a href="/learn" class="btn" style="border:1px solid rgba(255,255,255,0.3); color:#fff; padding:11px 22px; border-radius:999px; font-weight:600">Learn About E-Waste</a>
     </div>
-    <p style="margin-top:14px; font-size:12px; color:#64748b; letter-spacing:0.04em">Works with your camera · No technical knowledge needed</p>
   </div>
 </section>
 
-<!-- SECTION 1 — What can you discover? -->
+<!-- GRID 10 KELAS -->
 <section class="section">
   <div class="container">
-    <p class="kicker">EXPLORE EXAMPLES</p>
-    <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:end">
-      <h2>What can you discover?</h2>
-      <p class="desc" style="max-width:380px; margin-left:auto">Examples of electronic items our visual system has learned to group. Explore different electronic items — interpretations are tentative.</p>
-    </div>
-    <div class="grid-5" style="margin-top:24px">
-      <div class="card"><div class="card-icon">💻</div><h3>Computers</h3><p>Desktops, laptops, and towers</p></div>
-      <div class="card"><div class="card-icon">📱</div><h3>Mobile Devices</h3><p>Phones and tablets</p></div>
-      <div class="card"><div class="card-icon">🔋</div><h3>Batteries</h3><p>Lithium and household cells</p></div>
-      <div class="card"><div class="card-icon">🟩</div><h3>Circuit Boards</h3><p>PCBs and recovery potential</p></div>
-      <div class="card"><div class="card-icon">⌨️</div><h3>Electronics & Peripherals</h3><p>Keyboards, mice, printers</p></div>
+    <p class="kicker">KENALI 10 JENIS</p>
+    <h2>Grid kelas yang dikenali model</h2>
+    <p class="desc">Tiap kartu menuju halaman panduan kelas tersebut — interpretasi tetap tentative.</p>
+    <div style="display:grid; grid-template-columns: repeat(5,1fr); gap:14px; margin-top:16px">
+      {% for p in [
+        {"id":"battery","nama":"Baterai","icon":"🔋"},
+        {"id":"pcb","nama":"Papan Sirkuit","icon":"🟩"},
+        {"id":"phone","nama":"Handphone","icon":"📱"},
+        {"id":"laptop","nama":"Laptop","icon":"💻"},
+        {"id":"monitor","nama":"Monitor","icon":"🖥️"},
+        {"id":"printer","nama":"Printer","icon":"🖨️"},
+        {"id":"keyboard","nama":"Keyboard","icon":"⌨️"},
+        {"id":"mouse","nama":"Mouse","icon":"🖱️"},
+        {"id":"microwave","nama":"Microwave","icon":"♨️"},
+        {"id":"washing_machine","nama":"Mesin Cuci","icon":"🫧"}
+      ] %}
+      <a href="/panduan/{{ p.id }}" style="text-decoration:none; color:inherit; border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:14px; text-align:center; display:flex; flex-direction:column; align-items:center">
+        <div style="width:44px; height:44px; border-radius:14px; background:rgba(255,255,255,0.06); display:grid; place-items:center; font-size:20px">{{ p.icon }}</div>
+        <div style="font-weight:700; margin-top:8px; font-size:13px">{{ p.nama }}</div>
+        <div style="font-size:11px; color:#0e7c7b; margin-top:4px; font-weight:600">Lihat panduan →</div>
+      </a>
+      {% endfor %}
     </div>
   </div>
 </section>
 
-<!-- SECTION 2 — From camera to insight -->
+<!-- CARA KERJA 4 LANGKAH -->
 <section class="section section-alt">
   <div class="container">
-    <p class="kicker">HOW IT WORKS</p>
-    <h2>From camera to insight</h2>
-    <div class="steps" style="margin-top:28px">
-      <div class="step"><div class="step-num">01</div><h3>Show your item</h3><p>Use your live camera or upload a photo. No names or categories needed.</p><div class="step-emoji">📷</div></div>
-      <div class="step"><div class="step-num">02</div><h3>Let AI analyze it</h3><p>We find visually similar items from thousands of electronic images.</p><div class="step-emoji">✨</div></div>
-      <div class="step"><div class="step-num">03</div><h3>Explore the result</h3><p>See your visual match, similar items, and what to do next.</p><div class="step-emoji">🔍</div></div>
+    <p class="kicker">CARA KERJA</p>
+    <h2>Foto → Kenali → Baca panduan → Setor</h2>
+    <div style="display:grid; grid-template-columns: repeat(4,1fr); gap:16px; margin-top:16px">
+      <div class="step"><div class="step-num">01</div><h3>Foto</h3><p>Potret satu barang dengan HP.</p></div>
+      <div class="step"><div class="step-num">02</div><h3>Kenali</h3><p>AI kenali jenis perangkat (top-3).</p></div>
+      <div class="step"><div class="step-num">03</div><h3>Baca panduan</h3><p>Tingkat bahaya & langkah aman.</p></div>
+      <div class="step"><div class="step-num">04</div><h3>Setor</h3><p>Pilih titik drop-off terdekat.</p></div>
     </div>
   </div>
 </section>
 
-<!-- SECTION 3 — E-Waste Learning -->
+<!-- MASALAH KONKRET -->
 <section class="section">
   <div class="container">
-    <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:start">
-      <div>
-        <p class="kicker">E-WASTE LEARNING</p>
-        <h2>Learn the essentials</h2>
+    <div style="border:1px solid #fecaca; background:#fef2f2; border-radius:20px; padding:20px; display:flex; gap:16px; align-items:center; flex-wrap:wrap">
+      <div style="width:48px; height:48px; border-radius:14px; background:var(--panel); border:1px solid #fecaca; display:grid; place-items:center; font-size:24px">⚠️</div>
+      <div style="flex:1; min-width:240px">
+        <div style="font-weight:800; color:#991b1b">Baterai menggembung di laci — jangan disimpan!</div>
+        <div style="font-size:13px; color:#7f1d1d; margin-top:4px">Baterai lithium yang dibiarkan bisa bocor, panas, bahkan kebakaran. Tutup kutub dengan selotip, simpan kering terpisah, dan segera ke drop-off B3.</div>
       </div>
-      <a href="/learn" style="font-weight:600; font-size:14px; color:var(--teal)">Browse learning center →</a>
-    </div>
-    <div class="learn-grid" style="margin-top:28px">
-      <a href="/learn/understanding-e-waste" class="learn-card" style="text-decoration:none"><h3>Understanding E-Waste</h3><p>What e-waste is, what’s inside, and why it matters.</p><span style="margin-top:14px; font-weight:700; color:var(--teal); font-size:13px">Read more →</span></a>
-      <a href="/learn/why-recycling-matters" class="learn-card" style="text-decoration:none"><h3>Why Recycling Matters</h3><p>Environmental and community benefits of responsible recycling.</p><span style="margin-top:14px; font-weight:700; color:var(--teal); font-size:13px">Read more →</span></a>
-      <a href="/learn/your-role-and-community" class="learn-card" style="text-decoration:none"><h3>Your Role & Community</h3><p>How individuals and communities contribute to circularity.</p><span style="margin-top:14px; font-weight:700; color:var(--teal); font-size:13px">Read more →</span></a>
-      <a href="/learn/where-to-recycle-safely" class="learn-card" style="text-decoration:none"><h3>Safe E-Waste Handling</h3><p>Storing and handling items safely before collection.</p><span style="margin-top:14px; font-weight:700; color:var(--teal); font-size:13px">Read more →</span></a>
+      <a href="/panduan/battery" style="background:#991b1b; color:#fff; padding:10px 16px; border-radius:999px; font-weight:600; font-size:13px; white-space:nowrap">Panduan Baterai →</a>
     </div>
   </div>
 </section>
 
-<!-- SECTION 4 — CTA -->
+<!-- BUKTI -->
+<section class="section section-alt">
+  <div class="container">
+    <div style="display:grid; grid-template-columns: repeat(3,1fr); gap:16px; text-align:center">
+      <div style="background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:20px"><div style="font-size:28px; font-weight:800">92%</div><div style="font-size:13px; color:#64748b">Akurasi model (test set)</div></div>
+      <div style="background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:20px"><div style="font-size:28px; font-weight:800">85%</div><div style="font-size:13px; color:#64748b">Akurasi foto dunia nyata</div></div>
+      <div style="background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:20px"><div style="font-size:28px; font-weight:800">4.2/5</div><div style="font-size:13px; color:#64748b">Skor SUS uji pengguna</div></div>
+    </div>
+    <p style="font-size:11px; color:#94a3b8; text-align:center; margin-top:8px">Angka contoh — ganti dengan hasil evaluasi nyata dan tampilkan keterbatasan secara terbuka.</p>
+  </div>
+</section>
+
+<!-- LEARN ESSENTIALS ID -->
+<section class="section">
+  <div class="container">
+    <p class="kicker">BELAJAR INTI</p>
+    <h2>Pelajari yang esensial</h2>
+    <div class="learn-grid" style="margin-top:16px">
+      <a href="/learn/understanding-e-waste" class="learn-card"><h3>Memahami E-Waste</h3><p>Apa itu limbah elektronik dan kenapa perlu dipilah.</p><span>Baca →</span></a>
+      <a href="/learn/why-recycling-matters" class="learn-card"><h3>Kenapa Daur Ulang Penting</h3><p>Manfaat lingkungan dan komunitas.</p><span>Baca →</span></a>
+      <a href="/learn/your-role-and-community" class="learn-card"><h3>Peranmu & Komunitas</h3><p>Kontribusi warga dan RT/perumahan.</p><span>Baca →</span></a>
+      <a href="/learn/where-to-recycle-safely" class="learn-card"><h3>Ke Mana Membuang Aman</h3><p>Titik kumpul dan drop-off terdekat.</p><span>Baca →</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
 <section class="section" style="padding-top:0">
   <div class="container">
     <div class="cta-dark">
-      <div>
-        <h2>Have an electronic item you’re unsure about?</h2>
-        <p>Let AI help you take a closer look.</p>
-      </div>
-      <a href="/analyze" class="btn btn-teal" style="white-space:nowrap; padding:14px 26px">Analyze an Item →</a>
+      <div><h2>Siap coba klasifikasi sekarang?</h2><p>Hasil dalam 3 langkah dari situs dibuka.</p></div>
+      <a href="/klasifikasi" class="btn btn-teal" style="background:var(--panel); color:#0e2f2e">Coba klasifikasi sekarang →</a>
     </div>
   </div>
 </section>
