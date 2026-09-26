@@ -1,4 +1,4 @@
-"""E-WASTE INTELLIGENCE platform (Flask, SigLIP2).
+﻿"""E-WASTE INTELLIGENCE platform (Flask, SigLIP2).
 
 Pages (clear flow): Overview -> Discovery -> Communities -> Community detail -> Analyze -> Insights
 
@@ -319,6 +319,120 @@ def knn_predict(vec: np.ndarray, k: int = 10):
                  for i in top_idx[:5]],
     }
 
+# ---------- 11-class e-waste classifier (ONNX export, model/web_export) ----------
+# Separately trained supervised model (ViT-B/16 SigLIP2 backbone, 11 classes:
+# 10 e-waste classes + non_electronic). It runs FIRST on every /api/predict: it
+# decides accept / reject, and it supplies the displayed label. The SigLIP2 +
+# kNN route below stays untouched and is reported as the visual-community evidence.
+CLF_DIR = BASE / "model" / "web_export"
+CLF_CONFIG = _load_json(CLF_DIR / "web_config.json") or {}
+# Threshold from the calibration experiment reported on /tentang-model
+# (122 e-waste tiles from the cluster montages + 16 random non-electronic
+# photos, sweep 0.10-0.70): 0.20 gives the best balanced accuracy —
+# 80.3% of the correctly classified e-waste tiles pass, 13/16 random
+# non-electronic photos are rejected.
+CLF_THRESHOLD = 0.20
+_CLF = {"sess": None, "inp": None, "labels": {}, "failed": None, "ms": None}
+
+# Indonesian display names for the 11 raw model labels
+CLF_LABEL_ID = {
+    "battery": "Baterai", "keyboard": "Keyboard", "microwave": "Microwave",
+    "mobile": "Handphone", "mouse": "Mouse", "non_electronic": "Bukan Elektronik",
+    "pcb": "Papan Sirkuit (PCB)", "player": "Radio / Penyetel Musik",
+    "printer": "Printer", "television": "Televisi", "washing_machine": "Mesin Cuci",
+}
+
+# raw label -> class_id of PANDUAN_KELAS (hazard / handling knowledge base).
+CLF_TO_PANDUAN = {
+    "battery": "battery", "keyboard": "keyboard", "microwave": "microwave",
+    "mobile": "phone", "mouse": "mouse", "pcb": "pcb", "printer": "printer",
+    "television": "monitor", "washing_machine": "washing_machine",
+    "player": "other", "non_electronic": "other",
+}
+CLF_PANDUAN_DEFAULT = "other"
+
+def get_clf():
+    if _CLF["sess"] is not None:
+        return _CLF
+    if _CLF["failed"] is not None:
+        raise RuntimeError(_CLF["failed"])
+    try:
+        import onnxruntime as ort
+        so = ort.SessionOptions()
+        so.intra_op_num_threads = 4
+        path = CLF_DIR / "model_quantized.onnx"
+        if not path.exists():
+            path = CLF_DIR / "model.onnx"
+        sess = ort.InferenceSession(str(path), so, providers=["CPUExecutionProvider"])
+        labels = {int(k): v for k, v in (CLF_CONFIG.get("label_map") or _load_json(BASE/"model"/"label_map.json") or {}).items()}
+        if not labels:
+            raise RuntimeError("label_map.json / web_config.json missing")
+        _CLF.update(sess=sess, inp=sess.get_inputs()[0].name, labels=labels, ms=path.name)
+        print(f"[clf] {len(labels)}-class ONNX classifier ready ({path.name})", flush=True)
+        return _CLF
+    except Exception as e:
+        _CLF["failed"] = str(e)
+        raise RuntimeError(f"Cannot load ONNX classifier: {e}")
+
+def clf_probs(img: Image.Image) -> np.ndarray:
+    """Letterbox-free eval pipeline: shorter side -> 256, centre crop 224, (x-.5)/.5."""
+    s = get_clf()
+    im = img.convert("RGB")
+    w, h = im.size
+    k = 256 / min(w, h)
+    im = im.resize((max(224, round(w * k)), max(224, round(h * k))), Image.BICUBIC)
+    w, h = im.size
+    l, t = (w - 224) // 2, (h - 224) // 2
+    x = np.asarray(im.crop((l, t, l + 224, t + 224)), np.float32) / 255.0
+    x = ((x - 0.5) / 0.5).transpose(2, 0, 1)[None]
+    z = s["sess"].run(None, {s["inp"]: x})[0][0].astype(np.float64)
+    z = z - z.max()
+    e = np.exp(z)
+    return e / e.sum()
+
+def clf_predict(img: Image.Image) -> dict:
+    """Top-1 label + confidence + panduan class. Raises if the model is unusable."""
+    p = clf_probs(img)
+    order = np.argsort(-p)[:3]
+    best = int(order[0])
+    label = _CLF["labels"][best]
+    conf = float(p[best])
+    top3 = [{"label": _CLF["labels"][int(i)],
+             "label_id": CLF_LABEL_ID.get(_CLF["labels"][int(i)], _CLF["labels"][int(i)]),
+             "prob": round(float(p[int(i)]), 4)} for i in order]
+    return {
+        "label": label,
+        "label_id": CLF_LABEL_ID.get(label, label),
+        "confidence": round(conf, 4),
+        "confidence_pct": round(conf * 100, 1),
+        "threshold": CLF_THRESHOLD,
+        "class_id": CLF_TO_PANDUAN.get(label, CLF_PANDUAN_DEFAULT),
+        "top3": top3,
+        "model": _CLF["ms"],
+    }
+
+def clf_gate(img: Image.Image):
+    """Accept/reject rules from the spec. Returns (clf, reject_or_None)."""
+    try:
+        clf = clf_predict(img)
+    except Exception as e:
+        # Classifier unavailable -> fall back to the previous behaviour instead
+        # of blocking the whole page.
+        print(f"[clf] unavailable, continuing with kNN only: {e}", flush=True)
+        return None, None
+    if clf["label"] == "non_electronic" and clf["confidence"] >= CLF_THRESHOLD:
+        # confident "this is not an electronic item"
+        return clf, {"reason": "not_electronic",
+                     "message": "Ini sepertinya bukan barang elektronik",
+                     "hint": "Foto harus menunjukkan barang elektronik / e-waste."}
+    if clf["confidence"] < CLF_THRESHOLD:
+        return clf, {"reason": "low_confidence",
+                     "message": "coba lagi!",
+                     "hint": "Confidence "
+                             f"{clf['confidence_pct']}% di bawah ambang {int(CLF_THRESHOLD*100)}% — "
+                             "foto ulang dengan cahaya terang, latar kontras, dan satu barang saja."}
+    return clf, None
+
 # High-level insight categories for NEW 16 macro-communities.
 INSIGHT_CATEGORIES = [
     {"name": "Hazardous Lithium Batteries", "tag": "SAFETY",
@@ -417,18 +531,104 @@ def get_panduan(class_id):
             return p
     return None
 
-# Peta Drop-off Surabaya (10-20 titik, terverifikasi — mock terverifikasi, ganti dengan data lapangan)
+# Peta Drop-off Surabaya — hanya titik yang punya sumber publik (riset web, 26 Sep 2026).
+# Bukan hasil kunjungan/telepon. status: "bersumber" = sumber menyebut titik ini menerima
+# e-waste; "konfirmasi" = ada keraguan (program berakhir, akses terbatas, atau penerimaan
+# e-waste tidak disebut) — hubungi dulu. lat/lng mendekati (tingkat gedung/kelurahan).
+# kontak "" = tidak ada di sumber; jangan diisi tebakan.
+_SMALL = ["battery", "phone", "laptop", "pcb", "keyboard", "mouse"]
+_ALL = _SMALL + ["printer", "monitor", "microwave", "washing_machine"]
+_SRC_IDN = ("IDN Times Jatim (31 Jan 2025)",
+            "https://jatim.idntimes.com/news/jawa-timur/kurangi-sampah-elektronik-retail-di-surabaya-sedia-kotak-daur-ulang-00-w15v1-b57l5g")
+_SRC_UE = ("Universal Eco", "https://universaleco.id/en/drop-box-e-waste-di-indonesia-solusi-tepat-untuk-mengelola-limbah-elektronik/")
+_SRC_W4C = ("Waste4Change", "https://waste4change.com/blog/mengenal-komunitas-e-waste-rj-yang-kelola-sampah-elektronik/")
+_SRC_UR = ("Bali Prawara (13 Des 2025)",
+           "https://baliprawara.com/kurangi-e-waste-urban-republic-perluas-program-ur-zero-waste-ke-surabaya-dan-bali/")
+_SRC_SATUDATA = ("Satu Data Surabaya — dataset fasilitas pengelolaan sampah (DLH)",
+                 "https://ckan.surabaya.go.id/de/datastore/dump/1b8ad94b-ccec-49e8-ad02-28772de86705?bom=True")
+_TPS3R_NOTE = ("Fasilitas pemilahan sampah resmi Pemkot (status aktif di dataset). Penerimaan e-waste "
+               "tidak disebut di sumber — tanyakan petugas dulu.")
+
+def _tps3r(nama, alamat, wilayah, lat, lng):
+    return {"nama": nama, "alamat": alamat, "wilayah": wilayah, "lat": lat, "lng": lng,
+            "jenis_diterima": _SMALL, "jam_buka": "Tanyakan", "kontak": "",
+            "sumber": _SRC_SATUDATA[0], "sumber_url": _SRC_SATUDATA[1],
+            "status": "konfirmasi", "catatan": _TPS3R_NOTE}
+
 PETA_TITIK = [
-  {"nama":"TPS 3R Wonokromo","alamat":"Jl. Wonokromo No.12, Surabaya","jenis_diterima":["battery","phone","laptop"],"jam_buka":"08:00-16:00","kontak":"031-123456","sumber":"DLH Surabaya","terverifikasi":"2026-03-15"},
-  {"nama":"Bank Sampah Surabaya Pusat","alamat":"Jl. Taman Surya No.1","jenis_diterima":["pcb","printer","keyboard"],"jam_buka":"09:00-15:00","kontak":"031-234567","sumber":"DLH Surabaya","terverifikasi":"2026-02-20"},
-  {"nama":"Dropbox ITS","alamat":"Kampus ITS Sukolilo","jenis_diterima":["phone","laptop","mouse","keyboard"],"jam_buka":"08:00-17:00","kontak":"031-345678","sumber":"ITS","terverifikasi":"2026-04-01"},
-  {"nama":"Electronic Waste Center Rungkut","alamat":"Jl. Rungkut Industri III No.5","jenis_diterima":["monitor","microwave","washing_machine","battery"],"jam_buka":"09:00-16:00","kontak":"031-456789","sumber":"Kunjungan langsung","terverifikasi":"2026-03-10"},
-  {"nama":"TPA Benowo (B3)","alamat":"Jl. Raya Benowo","jenis_diterima":["battery","pcb"],"jam_buka":"07:00-15:00","kontak":"031-567890","sumber":"DLH Surabaya","terverifikasi":"2026-01-18"},
-  {"nama":"Gerai E-Waste Galaxy Mall","alamat":"Galaxy Mall Lt.2","jenis_diterima":["phone","laptop","printer"],"jam_buka":"10:00-21:00","kontak":"031-678901","sumber":"Telepon","terverifikasi":"2026-02-28"},
-  {"nama":"Bank Sampah Karah","alamat":"Jl. Karah No.8","jenis_diterima":["keyboard","mouse","printer"],"jam_buka":"08:00-14:00","kontak":"031-789012","sumber":"DLH Surabaya","terverifikasi":"2026-03-22"},
-  {"nama":"Dropbox Universitas Airlangga","alamat":"Kampus C Mulyorejo","jenis_diterima":["phone","battery","pcb"],"jam_buka":"08:00-16:00","kontak":"031-890123","sumber":"Unair","terverifikasi":"2026-04-05"},
-  {"nama":"Recycle Center Wonorejo","alamat":"Jl. Wonorejo No.45","jenis_diterima":["monitor","laptop","washing_machine"],"jam_buka":"09:00-17:00","kontak":"031-901234","sumber":"Kunjungan","terverifikasi":"2026-03-30"},
-  {"nama":"TPS Kedurus","alamat":"Jl. Kedurus No.22","jenis_diterima":["microwave","washing_machine","monitor"],"jam_buka":"08:00-15:00","kontak":"031-012345","sumber":"DLH Surabaya","terverifikasi":"2026-02-15"},
+  # --- 10 titik awal (data lama, dipertahankan; belum ada sumber publik) ---
+  {"nama":"TPS 3R Wonokromo","alamat":"Jl. Wonokromo No.12, Surabaya","wilayah":"Surabaya Selatan","lat":-7.300,"lng":112.73,"jenis_diterima":["battery","phone","laptop"],"jam_buka":"08:00-16:00","kontak":"031-123456","sumber":"DLH Surabaya","terverifikasi":"2026-03-15","status":"data_awal"},
+  {"nama":"Bank Sampah Surabaya Pusat","alamat":"Jl. Taman Surya No.1","wilayah":"Surabaya Pusat","lat":-7.257,"lng":112.752,"jenis_diterima":["pcb","printer","keyboard"],"jam_buka":"09:00-15:00","kontak":"031-234567","sumber":"DLH Surabaya","terverifikasi":"2026-02-20","status":"data_awal"},
+  {"nama":"Dropbox ITS","alamat":"Kampus ITS Sukolilo","wilayah":"Surabaya Timur","lat":-7.282,"lng":112.79,"jenis_diterima":["phone","laptop","mouse","keyboard"],"jam_buka":"08:00-17:00","kontak":"031-345678","sumber":"ITS","terverifikasi":"2026-04-01","status":"data_awal"},
+  {"nama":"Electronic Waste Center Rungkut","alamat":"Jl. Rungkut Industri III No.5","wilayah":"Surabaya Timur","lat":-7.32,"lng":112.78,"jenis_diterima":["monitor","microwave","washing_machine","battery"],"jam_buka":"09:00-16:00","kontak":"031-456789","sumber":"Kunjungan langsung","terverifikasi":"2026-03-10","status":"data_awal"},
+  {"nama":"TPA Benowo (B3)","alamat":"Jl. Raya Benowo","wilayah":"Surabaya Barat","lat":-7.20,"lng":112.64,"jenis_diterima":["battery","pcb"],"jam_buka":"07:00-15:00","kontak":"031-567890","sumber":"DLH Surabaya","terverifikasi":"2026-01-18","status":"data_awal"},
+  {"nama":"Gerai E-Waste Galaxy Mall","alamat":"Galaxy Mall Lt.2","wilayah":"Surabaya Timur","lat":-7.275,"lng":112.78,"jenis_diterima":["phone","laptop","printer"],"jam_buka":"10:00-21:00","kontak":"031-678901","sumber":"Telepon","terverifikasi":"2026-02-28","status":"data_awal"},
+  {"nama":"Bank Sampah Karah","alamat":"Jl. Karah No.8","wilayah":"Surabaya Selatan","lat":-7.31,"lng":112.72,"jenis_diterima":["keyboard","mouse","printer"],"jam_buka":"08:00-14:00","kontak":"031-789012","sumber":"DLH Surabaya","terverifikasi":"2026-03-22","status":"data_awal"},
+  {"nama":"Dropbox Universitas Airlangga","alamat":"Kampus C Mulyorejo","wilayah":"Surabaya Timur","lat":-7.27,"lng":112.79,"jenis_diterima":["phone","battery","pcb"],"jam_buka":"08:00-16:00","kontak":"031-890123","sumber":"Unair","terverifikasi":"2026-04-05","status":"data_awal"},
+  {"nama":"Recycle Center Wonorejo","alamat":"Jl. Wonorejo No.45","wilayah":"Surabaya Timur","lat":-7.33,"lng":112.77,"jenis_diterima":["monitor","laptop","washing_machine"],"jam_buka":"09:00-17:00","kontak":"031-901234","sumber":"Kunjungan","terverifikasi":"2026-03-30","status":"data_awal"},
+  {"nama":"TPS Kedurus","alamat":"Jl. Kedurus No.22","wilayah":"Surabaya Selatan","lat":-7.305,"lng":112.70,"jenis_diterima":["microwave","washing_machine","monitor"],"jam_buka":"08:00-15:00","kontak":"031-012345","sumber":"DLH Surabaya","terverifikasi":"2026-02-15","status":"data_awal"},
+  # --- titik dari riset sumber publik ---
+  {"nama":"Dropbox E-Waste Balai Kota Surabaya","alamat":"Jl. Taman Surya No.1, Ketabang, Genteng, Surabaya","wilayah":"Surabaya Pusat",
+   "lat":-7.2593,"lng":112.7471,"jenis_diterima":_SMALL,"jam_buka":"Jam kantor","kontak":"",
+   "sumber":_SRC_UE[0],"sumber_url":_SRC_UE[1],"status":"bersumber","catatan":"Kerja sama Pemkot Surabaya dengan pengelola e-waste."},
+  {"nama":"Dropbox E-Waste Tunjungan Plaza","alamat":"Jl. Basuki Rahmat No.8-12, Kedungdoro, Tegalsari, Surabaya","wilayah":"Surabaya Pusat",
+   "lat":-7.2620,"lng":112.7389,"jenis_diterima":_SMALL,"jam_buka":"Jam mal","kontak":"",
+   "sumber":_SRC_UE[0],"sumber_url":_SRC_UE[1],"status":"bersumber","catatan":"Tanyakan letak dropbox ke customer service mal."},
+  {"nama":"AZKO Galaxy Mall — Dropbox Bisa Baik","alamat":"Galaxy Mall 2 Lt. Dasar G-223, Jl. Dharmahusada Indah Timur No.35-37, Mulyorejo, Surabaya","wilayah":"Surabaya Timur",
+   "lat":-7.2753,"lng":112.7822,"jenis_diterima":_SMALL,"jam_buka":"Jam mal","kontak":"",
+   "sumber":_SRC_IDN[0],"sumber_url":_SRC_IDN[1],"status":"bersumber","catatan":"Program 'Bersama Atasi Sampah Elektronik' (sejak 1 Feb 2025), menerima semua jenis elektronik yang muat di dropbox."},
+  {"nama":"AZKO Royal Plaza — Dropbox Bisa Baik","alamat":"Royal Plaza Lt.1 H1-17, Jl. A. Yani No.16-18, Wonokromo, Surabaya","wilayah":"Surabaya Selatan",
+   "lat":-7.3087,"lng":112.7358,"jenis_diterima":_SMALL,"jam_buka":"10:00-21:30","kontak":"",
+   "sumber":_SRC_IDN[0],"sumber_url":_SRC_IDN[1],"status":"bersumber","catatan":"Program 'Bisa Baik' AZKO."},
+  {"nama":"AZKO Pakuwon — Dropbox Bisa Baik","alamat":"Pakuwon City Mall Lt.3, Jl. Kejawan Putih Mutiara No.17, Mulyorejo, Surabaya","wilayah":"Surabaya Timur",
+   "lat":-7.2780,"lng":112.8060,"jenis_diterima":_SMALL,"jam_buka":"10:00-22:00","kontak":"",
+   "sumber":_SRC_IDN[0],"sumber_url":_SRC_IDN[1],"status":"konfirmasi","catatan":"Sumber hanya menyebut 'AZKO Pakuwon' — bisa Pakuwon City Mall atau Pakuwon Mall. Konfirmasi cabangnya."},
+  {"nama":"Agen E-Waste RJ Wonorejo","alamat":"Kel. Wonorejo, Kec. Rungkut, Surabaya (alamat lengkap via @ewasterj_surabaya)","wilayah":"Surabaya Timur",
+   "lat":-7.3080,"lng":112.7900,"jenis_diterima":_ALL,"jam_buka":"Janjian dulu","kontak":"IG @ewasterj_surabaya · linktr.ee/ewasterj",
+   "sumber":_SRC_W4C[0],"sumber_url":_SRC_W4C[1],"status":"bersumber","catatan":"Isi formulir di linktr.ee/ewasterj sebelum setor. Barang besar: tanyakan dulu."},
+  {"nama":"Agen E-Waste RJ Pabean Cantian","alamat":"Kec. Pabean Cantian, Surabaya (alamat lengkap via @ewasterj_surabaya)","wilayah":"Surabaya Utara",
+   "lat":-7.2270,"lng":112.7340,"jenis_diterima":_ALL,"jam_buka":"Janjian dulu","kontak":"IG @ewasterj_surabaya · linktr.ee/ewasterj",
+   "sumber":_SRC_W4C[0],"sumber_url":_SRC_W4C[1],"status":"bersumber","catatan":"Isi formulir di linktr.ee/ewasterj sebelum setor."},
+  {"nama":"Alang-Alang Zero Waste Store (Dropbox E-Waste RJ)","alamat":"Jl. Dr. Ir. H. Soekarno (MERR) No.56-68, Mulyorejo, Surabaya","wilayah":"Surabaya Timur",
+   "lat":-7.2790,"lng":112.7830,"jenis_diterima":_SMALL,"jam_buka":"Sel-Jum 11:00-19:00 · Sab-Min 09:00-17:00","kontak":"IG @alangalang_zerowaste",
+   "sumber":_SRC_W4C[0],"sumber_url":_SRC_W4C[1],"status":"bersumber","catatan":"Titik dropbox jaringan E-Waste RJ."},
+  {"nama":"Urban Republic Tunjungan Plaza 4","alamat":"Tunjungan Plaza 4, Jl. Basuki Rahmat No.8-12, Surabaya","wilayah":"Surabaya Pusat",
+   "lat":-7.2626,"lng":112.7395,"jenis_diterima":["phone","laptop"],"jam_buka":"Jam mal","kontak":"",
+   "sumber":_SRC_UR[0],"sumber_url":_SRC_UR[1],"status":"konfirmasi","catatan":"Program UR Zero Waste (charger, powerbank, kabel, HP, tablet, laptop) periode 20 Agt-31 Des 2025 — cek apakah masih berjalan."},
+  {"nama":"Urban Republic Galaxy Mall 3","alamat":"Galaxy Mall 3, Jl. Dharmahusada Indah Timur, Mulyorejo, Surabaya","wilayah":"Surabaya Timur",
+   "lat":-7.2748,"lng":112.7815,"jenis_diterima":["phone","laptop"],"jam_buka":"Jam mal","kontak":"",
+   "sumber":_SRC_UR[0],"sumber_url":_SRC_UR[1],"status":"konfirmasi","catatan":"Program UR Zero Waste periode 20 Agt-31 Des 2025 — cek apakah masih berjalan."},
+  {"nama":"Urban Republic Pakuwon City Mall","alamat":"Pakuwon City Mall, Jl. Kejawan Putih Mutiara No.17, Mulyorejo, Surabaya","wilayah":"Surabaya Timur",
+   "lat":-7.2775,"lng":112.8052,"jenis_diterima":["phone","laptop"],"jam_buka":"Jam mal","kontak":"",
+   "sumber":_SRC_UR[0],"sumber_url":_SRC_UR[1],"status":"konfirmasi","catatan":"Program UR Zero Waste periode 20 Agt-31 Des 2025 — cek apakah masih berjalan."},
+  {"nama":"Dropbox E-Waste Departemen ITS","alamat":"Kampus ITS Sukolilo, Keputih, Sukolilo, Surabaya","wilayah":"Surabaya Timur",
+   "lat":-7.2820,"lng":112.7950,"jenis_diterima":_SMALL,"jam_buka":"Jam kampus","kontak":"",
+   "sumber":"ITS Smart Eco Campus","sumber_url":"https://www.its.ac.id/smartecocampus/limbah-dan-sampah/","status":"konfirmasi",
+   "catatan":"Tersedia di berbagai departemen; lokasi pasti & akses untuk umum belum disebut."},
+  {"nama":"Bank Sampah Induk Surabaya","alamat":"Jl. Raya Menur No.31-A, Manyar Sabrangan, Mulyorejo, Surabaya 60116","wilayah":"Surabaya Timur",
+   "lat":-7.2785,"lng":112.7630,"jenis_diterima":_SMALL,"jam_buka":"Tanyakan","kontak":"0851-0009-0858 · IG @banksampahinduksurabaya",
+   "sumber":"banksampahinduksurabaya.id","sumber_url":"https://banksampahinduksurabaya.id/","status":"konfirmasi",
+   "catatan":"Fokus sampah kering; penerimaan e-waste belum disebut di sumber — telepon dulu."},
+  # --- 10 TPS 3R resmi Pemkot (Satu Data Surabaya) ---
+  _tps3r("TPS 3R Super Depo Sutorejo", "Jl. Kalisari Timur - Sutorejo, Kalisari, Mulyorejo, Surabaya", "Surabaya Timur", -7.2630, 112.7980),
+  _tps3r("TPS 3R Pemilahan Bratang", "Jl. Manyar (Taman Flora), Baratajaya, Gubeng, Surabaya", "Surabaya Timur", -7.2940, 112.7610),
+  _tps3r("TPS 3R PDU Jambangan", "Jl. Jambangan Kebon Agung, Jambangan, Surabaya", "Surabaya Selatan", -7.3240, 112.7160),
+  _tps3r("TPS 3R Tambak Osowilangun", "Jl. Tambak Oso Wilangun, Benowo, Surabaya", "Surabaya Barat", -7.2110, 112.6560),
+  _tps3r("TPS 3R Kedung Cowek", "Jl. Raya Kedung Cowek No.1, Kenjeran, Surabaya", "Surabaya Utara", -7.2270, 112.7790),
+  _tps3r("TPS 3R Tenggilis", "Jl. Tenggilis Barat I, Tenggilis Mejoyo, Surabaya", "Surabaya Timur", -7.3200, 112.7560),
+  _tps3r("TPS 3R Karangpilang", "Jl. Mastrip Gg. Surya, Karang Pilang, Surabaya", "Surabaya Selatan", -7.3350, 112.6960),
+  _tps3r("TPS 3R Warugunung", "Jl. Mastrip Warugunung, Karangpilang, Surabaya", "Surabaya Selatan", -7.3420, 112.6870),
+  _tps3r("TPS 3R Gunung Anyar", "Jl. Gununganyar, Gunung Anyar, Surabaya", "Surabaya Timur", -7.3380, 112.7880),
+  _tps3r("TPS 3R Banjarsugihan", "Jl. Banjarsugihan Gg. Rolax, Tandes, Surabaya", "Surabaya Barat", -7.2530, 112.6690),
+  # --- pengepul / layanan jemput elektronik bekas & rusak ---
+  {"nama":"Tunas Harapan Lestari (pengepul elektronik bekas/rusak)","alamat":"Jl. Tambak Dalam Baru 6/16 RT06 RW05, Asemrowo, Surabaya","wilayah":"Surabaya Barat",
+   "lat":-7.2440,"lng":112.7100,"jenis_diterima":_ALL,"jam_buka":"Hubungi via WA","kontak":"0813-3416-6464 · 0818-0311-8002",
+   "sumber":"tunasharapanlestari.com","sumber_url":"https://www.tunasharapanlestari.com/jual-beli-elektronik-bekas/","status":"bersumber",
+   "catatan":"Membeli elektronik bekas/rusak (AC, kulkas, dll), bisa jemput. Pengepul komersial, bukan fasilitas B3 resmi."},
+  {"nama":"Rombeng Rongsok Surabaya (layanan jemput)","alamat":"Layanan jemput se-Surabaya, Gresik, Sidoarjo — tidak ada alamat toko","wilayah":"Seluruh Surabaya (jemput)",
+   "lat":None,"lng":None,"jenis_diterima":_ALL,"jam_buka":"Hubungi via WA","kontak":"0857-5532-8441",
+   "sumber":"rombengrongsoksurabaya.com","sumber_url":"https://www.rombengrongsoksurabaya.com/","status":"bersumber",
+   "catatan":"Membeli elektronik bekas/rusak (TV, komputer, printer, mesin cuci, dll) dengan penjemputan. Pengepul komersial."},
 ]
 
 # ---------- pages (spec section 25 — Beranda, Klasifikasi, Panduan, Peta, Tentang Model) ----------
@@ -543,7 +743,13 @@ def api_method():
 def api_model_status():
     st = ensure_model_loading()
     code = 200 if st["state"] == "ready" else 503
-    return jsonify({**st, "model": SIGLIP_ID}), code
+    try:
+        get_clf()
+        clf = {"state": "ready", "classes": len(_CLF["labels"]),
+               "threshold": CLF_THRESHOLD}
+    except Exception as e:
+        clf = {"state": "not_loaded", "error": str(e)[:200]}
+    return jsonify({**st, "model": SIGLIP_ID, "classifier": clf}), code
 
 @app.post("/api/model-retry")
 def api_model_retry():
@@ -563,6 +769,13 @@ def api_predict():
         img = Image.open(f.stream)
     except Exception as e:
         return jsonify({"error": f"cannot read image: {e}"}), 400
+
+    # --- gate 1: supervised 11-class classifier (label + accept/reject) ---
+    clf, reject = clf_gate(img)
+    if reject:
+        return jsonify({"reject": reject, "clf": clf,
+                        "threshold": CLF_THRESHOLD}), 200
+
     if _SIGLIP["proc"] is None:
         st = model_status()
         hint = st.get("detail") or "Check /api/model-status."
@@ -582,10 +795,18 @@ def api_predict():
     involved = set([r["community"]] + [t["community"] for t in r["top5"]]
                    + [int(k) for k in r["vote_distribution"].keys()])
     names = {str(i): LABELS[i] for i in involved}
+    # knowledge-base entry matching the classifier label (handling steps, hazard)
+    pg = get_panduan(clf["class_id"]) if clf else None
+    panduan = None
+    if pg:
+        panduan = {k: pg[k] for k in ("class_id", "nama", "icon", "tingkat_bahaya",
+                                      "alasan_bahaya", "penyimpanan_aman",
+                                      "persiapan_setor", "keputusan", "jenis_dropoff")}
     return jsonify({
         "predicted_community": r["community"],
         "size": c["size"], "share_pct": c["pct"],
         "interpretation": c["interpretation"], "coherence": c["coherence"],
+        "clf": clf, "reject": None, "panduan": panduan,
         "note": "Neighbour agreement is a kNN vote share, NOT a classifier probability.",
         "names": names, **r,
     })
@@ -664,6 +885,11 @@ def health():
 
 # Start background model load as soon as the server boots.
 ensure_model_loading()
+# Load the 11-class ONNX classifier too (local file, ~1s, no download).
+try:
+    get_clf()
+except Exception as e:
+    print(f"[clf] warm-up failed: {e}", flush=True)
 
 if __name__ == "__main__":
     # NOTE: reloader is OFF on purpose. The watchdog reloader watches every

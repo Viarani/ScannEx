@@ -25,7 +25,7 @@
         </div>
         <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
           <a id="dropoffBtn" href="/peta" style="background:#0e7c7b; color:#fff; padding:10px 16px; border-radius:999px; font-weight:600; font-size:13px; text-decoration:none">📍 Titik drop-off</a>
-          <a href="/panduan" style="border:1px solid var(--line); padding:10px 16px; border-radius:999px; font-weight:600; font-size:13px">Lihat panduan</a>
+          <a id="panduanBtn" href="/panduan" style="border:1px solid var(--line); padding:10px 16px; border-radius:999px; font-weight:600; font-size:13px">Lihat panduan</a>
         </div>
         <div style="margin-top:12px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px">
           <div style="font-weight:700; font-size:13px">Keputusan: perbaiki / donasi / daur ulang</div>
@@ -69,6 +69,11 @@ const hazardMap = {
   "phone": {label:"BAHAYA SEDANG", color:"#fffbeb", border:"#fde68a", text:"#92400e", desc:"Lepas baterai jika bisa, hapus data."},
   "laptop": {label:"BAHAYA SEDANG", color:"#fffbeb", border:"#fde68a", text:"#92400e", desc:"Hapus data & lepas baterai."},
   "monitor": {label:"BAHAYA SEDANG", color:"#fffbeb", border:"#fde68a", text:"#92400e", desc:"Jangan banting layar."},
+  "microwave": {label:"BAHAYA SEDANG", color:"#fffbeb", border:"#fde68a", text:"#92400e", desc:"Kapasitor tegangan tinggi — jangan dibongkar."},
+  "printer": {label:"BAHAYA RENDAH", color:"#ecfdf5", border:"#a7f3d0", text:"#065f46", desc:"Keluarkan tinta/toner sebelum disetor."},
+  "keyboard": {label:"BAHAYA RENDAH", color:"#ecfdf5", border:"#a7f3d0", text:"#065f46", desc:"Lepas baterai jika wireless."},
+  "mouse": {label:"BAHAYA RENDAH", color:"#ecfdf5", border:"#a7f3d0", text:"#065f46", desc:"Simpan kering sebelum disetor."},
+  "washing_machine": {label:"BAHAYA RENDAH", color:"#ecfdf5", border:"#a7f3d0", text:"#065f46", desc:"Utuh & kering sebelum disetor."},
   "default": {label:"BAHAYA RENDAH", color:"#ecfdf5", border:"#a7f3d0", text:"#065f46", desc:"Simpan kering sebelum disetor."}
 };
 try{
@@ -77,6 +82,7 @@ try{
   if(!raw){ document.getElementById('noResult').style.display='block'; } else {
     const j=JSON.parse(raw);
     document.getElementById('hasResult').style.display='block';
+    const clf=j.clf || null;
     if(preview){ const img=document.getElementById('resultImg'); img.src=preview; img.style.display='block'; document.getElementById('ph').style.display='none'; }
     // top-3: use vote_distribution sorted by count, map to names
     const votes = j.vote_distribution || {};
@@ -84,14 +90,19 @@ try{
     const total = Object.values(votes).reduce((a,b)=>a+b,0) || 10;
     const top = sorted.slice(0,3);
     const topNames = top.map(([k,c])=> ({id:k, name: (j.names && j.names[k]) || k, pct: Math.round(c/total*100)}));
-    if(topNames[0]){
+    if(clf){
+      document.getElementById('top3').textContent = 'Terdeteksi: ' + clf.label_id.toUpperCase() + ' ('+clf.confidence_pct+'%)';
+      const alt=(clf.top3||[]).slice(1).map(t=> t.label_id+' '+Math.round(t.prob*100)+'%').join(' · ');
+      const grp = j.interpretation ? 'Kelompok visual: '+j.interpretation+' ('+(j.neighbour_agreement_pct!=null?j.neighbour_agreement_pct+'%':'-')+')' : '';
+      document.getElementById('others').textContent = [alt, grp].filter(Boolean).join(' · ');
+    } else if(topNames[0]){
       document.getElementById('top3').textContent = 'Terdeteksi: ' + topNames[0].name.toUpperCase() + ' ('+topNames[0].pct+'%)';
       document.getElementById('others').textContent = topNames.slice(1).map(t=> t.name+' '+t.pct+'%').join(' · ');
     } else {
       document.getElementById('top3').textContent = 'Terdeteksi: ' + (j.interpretation||'Electronic item') + ' ('+(j.neighbour_agreement_pct||'-')+'%)';
     }
     // hazard
-    const cls = mapToPanduan[j.interpretation] || mapToPanduan[topNames[0]?.name] || 'other';
+    const cls = (clf && clf.class_id) || mapToPanduan[j.interpretation] || mapToPanduan[topNames[0]?.name] || 'other';
     const h = hazardMap[cls] || hazardMap.default;
     document.getElementById('hazard').style.background=h.color;
     document.getElementById('hazard').style.border='1px solid '+h.border;
@@ -102,11 +113,22 @@ try{
       battery: ['Tutup kutub dengan selotip','Jangan ditumpuk','Simpan di tempat kering'],
       pcb: ['Jangan dibongkar','Simpan kering','Bungkus antistatik'],
       phone: ['Hapus data','Lepas SIM','Matikan'],
+      laptop: ['Hapus data','Lepas baterai jika bisa','Simpan di tas'],
+      monitor: ['Jangan dibanting','Simpan tegak','Bungkus layar'],
+      printer: ['Keluarkan kertas','Tutup rapat','Kosongkan tinta'],
+      keyboard: ['Bersihkan debu','Lepas baterai jika wireless'],
+      mouse: ['Lepas baterai','Simpan kering'],
+      microwave: ['Cabut listrik','Jangan dibongkar','Kosongkan & bersihkan'],
+      washing_machine: ['Keringkan tabung','Cabut selang'],
       default: ['Hapus data jika ada','Jangan dibongkar','Simpan kering']
     };
-    const steps = stepsMap[cls] || stepsMap.default;
+    const kb = j.panduan;
+    const steps = (kb && (kb.penyimpanan_aman||[]).concat(kb.persiapan_setor||[]).length)
+      ? (kb.penyimpanan_aman||[]).concat(kb.persiapan_setor||[])
+      : (stepsMap[cls] || stepsMap.default);
     document.getElementById('steps').innerHTML = steps.map(s=>'<li>'+s+'</li>').join('');
     document.getElementById('dropoffBtn').href = '/peta?filter='+cls;
+    if(kb && kb.class_id) document.getElementById('panduanBtn').href = '/panduan/'+kb.class_id;
     // decision
     document.getElementById('decision').textContent = 'Jawab pertanyaan singkat di atas untuk saran perbaiki/donasi/daur ulang. Aturan contoh: Baterai menggembung → langsung drop-off B3';
     // uncertain

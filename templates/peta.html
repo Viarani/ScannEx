@@ -5,7 +5,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <div class="container" style="padding:32px 20px">
   <h1 style="font-size:32px; font-weight:800; letter-spacing:-0.02em; color:var(--text)">Peta Drop-off Surabaya</h1>
-  <p style="color:var(--text-dim)">10 titik terverifikasi — hubungi terlebih dahulu sebelum datang. Filter berdasarkan jenis barang dari hasil klasifikasi.</p>
+  <p style="color:var(--text-dim)">{{ titik|length }} titik drop-off & layanan jemput di Surabaya — {{ titik|selectattr("status","equalto","bersumber")|list|length }} bersumber jelas, {{ titik|selectattr("status","equalto","konfirmasi")|list|length }} perlu konfirmasi, {{ titik|selectattr("status","equalto","data_awal")|list|length }} data awal. Hubungi terlebih dahulu sebelum datang. Filter berdasarkan jenis barang dari hasil klasifikasi.</p>
 
   <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap; align-items:center">
     <span style="font-size:13px; font-weight:600; color:var(--text)">Filter jenis:</span>
@@ -15,55 +15,61 @@
       <option value="{{ p }}">{{ p }}</option>
       {% endfor %}
     </select>
-    <span style="font-size:11px; color:var(--text-dim)">Data per titik: nama, alamat, jam, kontak, sumber, tanggal verifikasi</span>
+    <span style="font-size:11px; color:var(--text-dim)">Data per titik: nama, alamat, jam, kontak, sumber, status</span>
   </div>
 
   <div id="map" style="margin-top:16px; border:1px solid var(--line); border-radius:20px; height:400px; background:var(--panel)"></div>
 
-  <div id="list" style="display:grid; grid-template-columns: repeat(2,1fr); gap:16px; margin-top:20px">
+  <div id="list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:16px; margin-top:20px">
     {% for t in titik %}
     <div class="titik" data-jenis="{{ t.jenis_diterima|join(',') }}" style="border:1px solid var(--line); border-radius:20px; background:var(--panel); backdrop-filter:blur(10px); padding:16px">
-      <div style="font-weight:700; color:var(--text)">{{ t.nama }}</div>
+      <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start">
+        <div style="font-weight:700; color:var(--text)">{{ t.nama }}</div>
+        {% if t.status == "bersumber" %}
+        <span style="flex:none; background:#ecfdf5; border:1px solid #a7f3d0; padding:2px 8px; border-radius:999px; font-size:10px; color:#065f46">Bersumber</span>
+        {% elif t.status == "konfirmasi" %}
+        <span style="flex:none; background:#fffbeb; border:1px solid #fde68a; padding:2px 8px; border-radius:999px; font-size:10px; color:#92400e">Perlu konfirmasi</span>
+        {% else %}
+        <span style="flex:none; background:#f1f5f9; border:1px solid #cbd5e1; padding:2px 8px; border-radius:999px; font-size:10px; color:#334155">Data awal</span>
+        {% endif %}
+      </div>
+      <div style="font-size:11px; color:var(--text-dim); margin-top:2px">{{ t.wilayah }}</div>
       <div style="font-size:13px; color:var(--text-dim); margin-top:4px">{{ t.alamat }}</div>
       <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap">
         {% for j in t.jenis_diterima %}<span style="background:#ecfdf5; border:1px solid #a7f3d0; padding:2px 8px; border-radius:999px; font-size:11px; color:#065f46">{{ j }}</span>{% endfor %}
       </div>
-      <div style="font-size:12px; color:var(--text-dim); margin-top:8px">🕒 {{ t.jam_buka }} · 📞 {{ t.kontak }}</div>
-      <div style="font-size:11px; color:var(--text-dim); margin-top:4px">Sumber: {{ t.sumber }} · Terverifikasi: {{ t.terverifikasi }}</div>
-      <div style="margin-top:8px"><a href="https://maps.google.com/?q={{ t.alamat|urlencode }}" target="_blank" style="font-size:12px; font-weight:600; color:var(--teal)">Buka di Maps →</a></div>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:8px">🕒 {{ t.jam_buka }}{% if t.kontak %} · 📞 {{ t.kontak }}{% endif %}</div>
+      {% if t.catatan %}<div style="font-size:12px; color:var(--text-dim); margin-top:4px">ℹ️ {{ t.catatan }}</div>{% endif %}
+      <div style="font-size:11px; color:var(--text-dim); margin-top:4px">Sumber: {% if t.sumber_url %}<a href="{{ t.sumber_url }}" target="_blank" rel="noopener" style="color:var(--teal)">{{ t.sumber }}</a>{% else %}{{ t.sumber }}{% endif %}{% if t.terverifikasi %} · Terverifikasi: {{ t.terverifikasi }}{% endif %}</div>
+      <div style="margin-top:8px"><a href="https://maps.google.com/?q={{ (t.nama ~ ', ' ~ t.alamat)|urlencode }}" target="_blank" style="font-size:12px; font-weight:600; color:var(--teal)">Buka di Maps →</a></div>
     </div>
     {% endfor %}
   </div>
-  <p style="font-size:11px; color:var(--text-dim); margin-top:12px">Cukup 10-20 titik yang benar-benar diverifikasi (hubungi/kunjungi) — lebih baik daripada ratusan yang belum dicek.</p>
+  <p style="font-size:11px; color:var(--text-dim); margin-top:12px">Titik diambil dari berita & situs resmi, belum dikunjungi/ditelepon langsung. Posisi marker mendekati — pakai "Buka di Maps" untuk lokasi pasti. Tahu titik lain? Tambahkan beserta sumbernya.</p>
 </div>
 {% endblock %}
 {% block scripts %}
 <script>
-const points = [
-  {nama:"TPS 3R Wonokromo", lat:-7.300, lng:112.73, jenis:["battery","phone","laptop"]},
-  {nama:"Bank Sampah Surabaya Pusat", lat:-7.257, lng:112.752, jenis:["pcb","printer","keyboard"]},
-  {nama:"Dropbox ITS", lat:-7.282, lng:112.79, jenis:["phone","laptop","mouse","keyboard"]},
-  {nama:"Electronic Waste Center Rungkut", lat:-7.32, lng:112.78, jenis:["monitor","microwave","washing_machine","battery"]},
-  {nama:"TPA Benowo (B3)", lat:-7.20, lng:112.64, jenis:["battery","pcb"]},
-  {nama:"Gerai E-Waste Galaxy Mall", lat:-7.275, lng:112.78, jenis:["phone","laptop","printer"]},
-  {nama:"Bank Sampah Karah", lat:-7.31, lng:112.72, jenis:["keyboard","mouse","printer"]},
-  {nama:"Dropbox Universitas Airlangga", lat:-7.27, lng:112.79, jenis:["phone","battery","pcb"]},
-  {nama:"Recycle Center Wonorejo", lat:-7.33, lng:112.77, jenis:["monitor","laptop","washing_machine"]},
-  {nama:"TPS Kedurus", lat:-7.305, lng:112.70, jenis:["microwave","washing_machine","monitor"]},
-];
-const map = L.map('map').setView([-7.28, 112.75], 11);
+const points = {{ titik|tojson }};
+const map = L.map('map').setView([-7.275, 112.76], 12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 const markers = [];
 points.forEach(p=>{
-  const m = L.marker([p.lat, p.lng]).addTo(map).bindPopup(`<b>${p.nama}</b><br>${p.jenis.join(', ')}`);
-  m._filterJenis = p.jenis;
+  if(typeof p.lat !== 'number' || typeof p.lng !== 'number') return;  // layanan jemput: tanpa marker
+  const m = L.marker([p.lat, p.lng]).addTo(map);
+  const pop = document.createElement('div');
+  const b = document.createElement('b'); b.textContent = p.nama;
+  pop.append(b, document.createElement('br'), p.jenis_diterima.join(', '));
+  m.bindPopup(pop);
+  m._filterJenis = p.jenis_diterima;
   markers.push(m);
 });
+if(markers.length) map.fitBounds(L.featureGroup(markers).getBounds().pad(0.15));
 const sel=document.getElementById('filter');
 function applyFilter(){
   const v=sel.value;
   document.querySelectorAll('.titik').forEach(el=>{
-    const j=el.dataset.jenis || "";
+    const j=(el.dataset.jenis || "").split(',');
     el.style.display = (v==='all' || j.includes(v)) ? 'block' : 'none';
   });
   markers.forEach(m=>{

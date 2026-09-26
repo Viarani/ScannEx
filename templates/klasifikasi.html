@@ -7,6 +7,13 @@
     <p style="color:#64748b; margin-top:8px">Unggah atau potret satu barang elektronik — kami kenali jenisnya dan beri panduan aman.</p>
   </div>
 
+  <div id="rejectPanel" style="display:none; margin-top:20px; border:1px solid #fca5a5; border-radius:20px; background:rgba(153,27,27,0.14); padding:18px; text-align:center">
+    <div style="font-size:20px; font-weight:800; color:#fecaca" id="rejectMsg">coba lagi!</div>
+    <div style="font-size:13px; color:#f3d0d0; margin-top:6px; line-height:1.6" id="rejectHint"></div>
+    <div style="font-size:12px; color:#fca5a5; margin-top:6px" id="rejectMeta"></div>
+    <button class="btn btn-teal" style="margin-top:12px" onclick="hideReject()">Coba lagi</button>
+  </div>
+
   <div id="choiceHint" style="text-align:center; margin-top:20px; color:var(--text-dim); font-size:13px">Pilih salah satu untuk memulai — kamera akan menyala setelah kamu memilih</div>
   <div style="display:flex; gap:12px; justify-content:center; margin-top:16px">
     <button class="tab" id="tabCamera" onclick="setMode('camera')">Gunakan Kamera</button>
@@ -144,9 +151,25 @@ function stopCamera(){
 function openFS(){ document.getElementById('cameraFullscreen').style.display='flex'; }
 function closeFS(){ document.getElementById('cameraFullscreen').style.display='none'; }
 
+function showReject(rej, clf){
+  const p=document.getElementById('rejectPanel');
+  document.getElementById('rejectMsg').textContent=rej.message||'coba lagi!';
+  document.getElementById('rejectHint').textContent=rej.hint||'';
+  document.getElementById('rejectMeta').textContent=clf&&clf.confidence!=null
+    ? 'Model: '+clf.label_id+' · confidence '+clf.confidence_pct+'% · ambang '+(clf.threshold*100).toFixed(0)+'%'
+    : '';
+  p.style.display='block';
+  p.scrollIntoView({behavior:'smooth', block:'center'});
+}
+function hideReject(){
+  const p=document.getElementById('rejectPanel');
+  if(p) p.style.display='none';
+}
+
 async function sendBlob(blob, previewUrl){
   if(busy) return;
   busy=true;
+  hideReject();
   const statusEl = document.getElementById('statusCamera').style.display!=='none' ? document.getElementById('statusCamera') : document.getElementById('statusUpload');
   if(previewUrl){
     document.getElementById('previewImg').src=previewUrl;
@@ -161,6 +184,13 @@ async function sendBlob(blob, previewUrl){
     const text=await r.text();
     let j; try{ j=JSON.parse(text);}catch{ throw new Error(text.slice(0,300)); }
     if(!r.ok) throw new Error(j.error || j.hint || 'Gagal analisis');
+    if(j.reject){
+      busy=false;
+      closeFS();
+      if(statusEl) statusEl.textContent='';
+      showReject(j.reject, j.clf);
+      return;
+    }
     sessionStorage.setItem('ewaste_last_result', JSON.stringify({...j, timestamp: Date.now()}));
     if(previewUrl){
       try{ sessionStorage.setItem('ewaste_preview', previewUrl); }catch{}

@@ -11,20 +11,20 @@
   <div style="display:grid; gap:16px; margin-top:20px">
     <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px">
       <h2 style="font-weight:700; margin:0">Dataset</h2>
-      <p style="font-size:13px; color:var(--text-dim); line-height:1.6">Sumber: dataset e-waste publik 10 kelas, 3,637 gambar valid (Electronic). Pembagian train/val/test 70/15/15, augmentasi: flip, rotate, brightness. Lisensi: CC BY 4.0 (cantumkan sumber asli setelah verifikasi).</p>
+      <p style="font-size:13px; color:var(--text-dim); line-height:1.6">Dua data berbeda. <b>(a) Klasifikasi</b> — 11 kelas: 10 kelas e-waste (battery, keyboard, microwave, mobile, mouse, pcb, player, printer, television, washing_machine) + 1 kelas <code>non_electronic</code>. Distribusi sangat timpang: <code>non_electronic</code> ~20.500 gambar, tiap kelas e-waste hanya ~200–300 gambar (lihat grafik distribusi di <code>model/__results___files</code>). Augmentasi flip/rotate/brightness. <b>(b) Clustering</b> — 3.637 foto e-waste valid untuk 16 komunitas makro (silhouette 0,774). Lisensi: CC BY 4.0 (cantumkan sumber asli setelah verifikasi).</p>
     </div>
     <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px">
       <h2 style="font-weight:700; margin:0">Arsitektur</h2>
-      <p style="font-size:13px; color:var(--text-dim)">Perbandingan 2-3 arsitektur (mis. MobileNetV2, EfficientNet-B0, ResNet18) — pilih berdasarkan akurasi, ukuran model, waktu inferensi di HP. Hasil tabel akan diisi setelah eksperimen.</p>
-      <div style="margin-top:8px; font-size:12px; color:#64748b">Tempat tabel: akurasi | ukuran (MB) | inferensi (ms)</div>
+      <p style="font-size:13px; color:var(--text-dim)">Klasifikator <b>11 kelas</b> — backbone <code>vit_base_patch16_siglip_gap_224.v2_webli</code> (ViT-B/16, patch 16, 224×224) + head klasifikasi. 10 kelas e-waste + 1 kelas <code>non_electronic</code>. Ekspor ONNX: <b>model_quantized.onnx 87 MB</b> (float32 345 MB), input 3×224×224, normalisasi mean/std 0.5.</p>
+      <div style="margin-top:8px; font-size:12px; color:#64748b">11 kelas | 87 MB | inferensi CPU ±200 ms/foto</div>
     </div>
     <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px">
       <h2 style="font-weight:700; margin:0">Pelatihan</h2>
-      <p style="font-size:13px; color:var(--text-dim)">Transfer learning dari ImageNet, hyperparameter: LR 1e-3, batch 32, epoch 30, early stopping. Augmentasi ringan untuk generalisasi foto HP.</p>
+      <p style="font-size:13px; color:var(--text-dim)">Fine-tune EMA di atas backbone pra-latih SigLIP2/WebLI, checkpoint terbaik disimpan sebagai <code>best_finetuned_ema.pt</code>. Augmentasi ringan untuk foto HP. Tantangan utama: <b>distribusi kelas timpang</b> — <code>non_electronic</code> ~20.500 gambar vs ~200–300 gambar untuk tiap kelas e-waste, sehingga model cenderung ragu pada kelas minoritas.</p>
     </div>
     <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px">
       <h2 style="font-weight:700; margin:0">Evaluasi</h2>
-      <p style="font-size:13px; color:var(--text-dim)">Accuracy, precision/recall/F1 per kelas, confusion matrix. Tampilkan matriks dan soroti kelas yang sering tertukar (mis. keyboard vs laptop).</p>
+      <p style="font-size:13px; color:var(--text-dim)">Confusion matrix 11 kelas + galeri prediksi salah tersimpan di <code>model/__results___files</code>. Contoh kesalahan yang teramati: <code>mobile → television</code> (layar HP mirip TV), <code>microwave → battery</code> pada foto label perangkat, dan <code>non_electronic → microwave</code> pada foto oven/kompor. Karena ketidakseimbangan kelas, model sengaja dibuat konservatif: keyakinan rendah ditolak lewat ambang confidence, bukan dipaksa menebak.</p>
     </div>
     <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px">
       <h2 style="font-weight:700; margin:0">Uji foto dunia nyata</h2>
@@ -32,7 +32,32 @@
     </div>
     <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px">
       <h2 style="font-weight:700; margin:0">Kalibrasi confidence</h2>
-      <p style="font-size:13px; color:var(--text-dim)">Reliability diagram — ambang “tidak yakin” ditentukan dari eksperimen, bukan asal.</p>
+      <p style="font-size:13px; color:var(--text-dim)">Ambang “tidak yakin” ditentukan dari eksperimen, bukan asal.</p>
+      <div style="margin-top:10px; font-size:13px; color:var(--text-dim); line-height:1.7">
+        <b>Eksperimen:</b> 122 tile foto e-waste (dipotong acak dari montase 64 komunitas) sebagai set elektronik, dan 16 foto acak non-elektronik sebagai set penolakan. Setiap gambar dijalankan ke model ONNX (softmax top-1) lalu di-sweep threshold 0,10–0,70.<br>
+        <b>Sweep threshold</b> (ACC = akurasi seimbang rata-rata dari dua kolom):
+      </div>
+      <table style="width:100%; border-collapse:collapse; margin-top:10px; font-size:12px; color:var(--text)">
+        <tr style="color:var(--text-dim); text-align:left">
+          <th style="padding:6px 4px; border-bottom:1px solid var(--line)">Threshold</th>
+          <th style="padding:6px 4px; border-bottom:1px solid var(--line)">E-waste diterima (semua / yang benar dikenali)</th>
+          <th style="padding:6px 4px; border-bottom:1px solid var(--line)">Foto non-elektronik ditolak</th>
+          <th style="padding:6px 4px; border-bottom:1px solid var(--line)">ACC</th>
+        </tr>
+        <tr><td style="padding:6px 4px">0,15</td><td>60,7% / 97,4%</td><td>9/16</td><td>58,5</td></tr>
+        <tr><td style="padding:6px 4px">0,18</td><td>56,6% / 90,8%</td><td>12/16</td><td>65,8</td></tr>
+        <tr style="background:rgba(15,209,182,0.10)"><td style="padding:6px 4px"><b>0,20 (dipakai)</b></td><td><b>50,0% / 80,3%</b></td><td><b>13/16</b></td><td><b>65,6</b></td></tr>
+        <tr><td style="padding:6px 4px">0,25</td><td>35,2% / 56,6%</td><td>14/16</td><td>61,4</td></tr>
+        <tr><td style="padding:6px 4px">0,30</td><td>31,1% / 50,0%</td><td>15/16</td><td>62,4</td></tr>
+        <tr><td style="padding:6px 4px">0,45</td><td>17,2% / 27,6%</td><td>15/16</td><td>55,5</td></tr>
+      </table>
+      <div style="margin-top:10px; font-size:13px; color:var(--text-dim); line-height:1.7">
+        Catatan: 46 dari 122 tile e-waste justru diprediksi <code>non_electronic</code> (banyak tile berlatar putih / kolase) — tile itu selalu ditolak berapapun threshold-nya, sebab itu kolom “semua” mentok di 62,3%. Nilai ambang dipilih di titik ACC tertinggi yang tetap masuk akal: <b>0,20</b>.<br><br>
+        <b>Aturan penolakan di aplikasi (<code>clf_gate</code> di app.py):</b><br>
+        1. Prediksi = <code>non_electronic</code> dengan confidence ≥ 0,20 → tampil <b>“Ini sepertinya bukan barang elektronik”</b>.<br>
+        2. Confidence &lt; <b>0,20</b> → tampil <b>“coba lagi!”</b> + saran foto ulang.<br>
+        3. Lolos keduanya → label model ditampilkan, kelompok visual (kNN) tetap ditampilkan sebagai bukti pendukung.
+      </div>
     </div>
     <div style="border:1px solid var(--line); border-radius:20px; background:var(--panel); padding:20px">
       <h2 style="font-weight:700; margin:0">Grad-CAM</h2>
